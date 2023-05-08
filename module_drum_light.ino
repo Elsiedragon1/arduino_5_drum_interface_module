@@ -30,6 +30,24 @@
 #include <Adafruit_NeoPixel.h>
 #include <Scheduler.h>
 
+//  Modbus Setup
+//  From https://github.com/CMB27/ModbusRTUSlave/
+#include <ModbusRTUSlave.h>
+
+const uint16_t id = 1;
+
+const uint32_t baud = 9600;
+const uint8_t config = SERIAL_8E1;
+const uint16_t bufferSize = 256;
+const uint8_t dePin = A0;
+
+const uint8_t inputRegisters = 1;
+
+uint8_t buffer[bufferSize];
+ModbusRTUSlave modbus(Serial, buffer, bufferSize, dePin, 20);
+
+int32_t triggeredDrumId = 0;
+
 #define NEOPIXEL_RING1_PIN 3
 #define NEOPIXEL_RING2_PIN 4
 #define NEOPIXEL_RING3_PIN 5
@@ -94,13 +112,24 @@ CapacitiveSensor drum[] = {
 
 long maxCapacitance[NUM_DRUMS];
 
+//  Serial commnication for Modbus requires disabling the serial communication for
+//  debugging capacitative sensing and the drum gameplay.
+//  Set MODBUS_DISABLED to 1 stop Modbus communication and allow communication over
+//  USB
+#define MODBUS_DISABLED 0
+
 // ============== MAIN task =======================================================
 void setup()
 {
-  Serial.begin(115200);
-
-  Serial.println("module_drum_light");
-  Serial.println("-----------------");
+  if (MODBUS_DISABLED) {
+    Serial.begin(115200);
+    Serial.println("module_drum_light");
+    Serial.println("-----------------");
+  } else {
+    pinMode(A0, OUTPUT);
+    Serial.begin(baud, config);
+    Scheduler.start(setupModbus, updateModbus);
+  }
 
   Scheduler.start(setupBuzzer, updateBuzzer);
   Scheduler.start(setupLights, updateLights);
@@ -112,10 +141,31 @@ void loop()
   yield();
 }
 
+// ============== Modbud Task =====================================================
+int32_t inputRegisterRead(uint16_t address) {
+    if (address < inputRegisters ) {
+        return triggeredDrumId;
+    } else {
+        return -1;
+    }
+}
+
+void setupModbus()
+{
+  modbus.begin(id, baud, config);
+  modbus.configureInputRegisters(1, inputRegisterRead);
+}
+
+void updateModbus()
+{
+  modbus.poll();
+  yield();
+}
+
 // ============== Buzzer task =====================================================
 void setupBuzzer()
 {
-  Serial.println("Setting buzzer pin...");
+  if (MODBUS_DISABLED) Serial.println("Setting buzzer pin...");
   EasyBuzzer.setPin(BUZZER_PIN);
 }
 
@@ -128,7 +178,7 @@ void updateBuzzer()
 // ============== Lights task (everything left from old setup/loop) ===============
 void setupLights()
 {
-  Serial.println("Initializing NeoPixel rings...");
+  if (MODBUS_DISABLED) Serial.println("Initializing NeoPixel rings...");
   for (int r = 0; r < NUM_RINGS; r++)
   {
     ring[r].begin();
@@ -139,13 +189,17 @@ void setupLights()
 
 void restartGame()
 {
-  if (!DEBUG_DRUMS) Serial.println("restartGame() called");
+  if(MODBUS_DISABLED) {
+    if (!DEBUG_DRUMS) Serial.println("restartGame() called");
+  }
 
   uint32_t white = Adafruit_NeoPixel::Color(255,255,255);
   uint32_t black = Adafruit_NeoPixel::Color(0,0,0);
 
   // Flash on and off several times
-  if (!DEBUG_DRUMS) Serial.println("Flashing all rings on/off a few times...");
+  if(MODBUS_DISABLED) {
+    if (!DEBUG_DRUMS) Serial.println("Flashing all rings on/off a few times...");
+  }
   for (int i = 0; i < GAME_START_FLASH_CYCLES; i++)
   {
     // if (!DEBUG_DRUMS) Serial.println("Filling rings: white");
@@ -163,8 +217,9 @@ void restartGame()
     }
     delay(GAME_START_FLASH_HALFCYLCE_MS);
   }
-
-  if (!DEBUG_DRUMS) Serial.println("restartGame() exiting");
+  if(MODBUS_DISABLED) {
+    if (!DEBUG_DRUMS) Serial.println("restartGame() exiting");
+  }
 }
 
 #define WORST_CASE_SEARCH_CYCLES 100
@@ -196,20 +251,28 @@ void updateLights()
 
   if (colourId < 0 || (current_millis > (roundStartMillis + roundDurationMs))) // && timeoutMillis != 0
   {
-    if (colourId >= 0) { Serial.println("Game timed out!"); }
+    if(MODBUS_DISABLED) {
+      if (colourId >= 0) {
+        Serial.println("Game timed out!");
+      }
+    }
 
     // Block during game start flashing phase
     restartGame();
 
     // Initialise first round
-    if (!DEBUG_DRUMS) Serial.println("Initializing first round");
+    if (MODBUS_DISABLED) {
+      if (!DEBUG_DRUMS) Serial.println("Initializing first round");
+    }
     roundDurationMs = GAME_ROUND_INITIAL_TIMEOUT_MS;
     current_millis = millis();
     roundStartMillis = current_millis;
     colourId = random(NUM_COLOUR_PRESETS);
     drumId = random(NUM_DRUMS);
 
-    if (!DEBUG_DRUMS) Serial.println("Filling chosen drumId + Master with colour_preset (and the rest black)");
+    if (MODBUS_DISABLED) {
+      if (!DEBUG_DRUMS) Serial.println("Filling chosen drumId + Master with colour_preset (and the rest black)");
+    }
     uint32_t black = Adafruit_NeoPixel::Color(0,0,0);
     for (int r = 0; r < NUM_RINGS - 1; r++)
     {
@@ -229,18 +292,19 @@ void updateLights()
   {
     curCapacitance[d] = drum[d].capacitiveSensor(CAPACITANCE_SAMPLES);
   }
-
-  if (DEBUG_DRUMS)
-  {
-    // Print the result of the sensor readings
-    // Note that the capacitance value is an arbitrary number
-    // See: https://playground.arduino.cc/Main/CapacitiveSensor/ for details
-    for (int d = 0; d < NUM_DRUMS; d++)
+  if (MODBUS_DISABLED) {
+    if (DEBUG_DRUMS)
     {
-      Serial.print(curCapacitance[drumId]);
-      Serial.print(" ");
+      // Print the result of the sensor readings
+      // Note that the capacitance value is an arbitrary number
+      // See: https://playground.arduino.cc/Main/CapacitiveSensor/ for details
+      for (int d = 0; d < NUM_DRUMS; d++)
+      {
+        Serial.print(curCapacitance[drumId]);
+        Serial.print(" ");
+      }
+      Serial.println("");
     }
-    Serial.println("");
   }
 
   // Threshold detection
@@ -271,7 +335,11 @@ void updateLights()
     else
     {
       // Success! increase speed / pitch and choose next round
-      if (!DEBUG_DRUMS) Serial.println("Success! Hit correct drum");
+
+      triggeredDrumId = drumId;
+      if (MODBUS_DISABLED) {
+        if (!DEBUG_DRUMS) Serial.println("Success! Hit correct drum");
+      }
 
       // TODO TODO TODO refactor this repeated code from 1st round into a function
       roundDurationMs = (roundDurationMs * PER_ROUND_TIMEOUT_FACTOR_PERCENT) / 100;
@@ -279,7 +347,9 @@ void updateLights()
       colourId = random(NUM_COLOUR_PRESETS);
       drumId = random(NUM_DRUMS);
 
-      if (!DEBUG_DRUMS) Serial.println("Filling chosen drumId with colour_preset (and the rest black)");
+      if (MODBUS_DISABLED) {
+        if (!DEBUG_DRUMS) Serial.println("Filling chosen drumId with colour_preset (and the rest black)");
+      }
       uint32_t black = Adafruit_NeoPixel::Color(0,0,0);
       for (int r = 0; r < NUM_RINGS - 1; r++)
       {
@@ -299,7 +369,7 @@ void updateLights()
 void setupDrums()
 {
   // Trying a 5sec autocalibration of baseline
-  Serial.println("Autocalibrating drums...");
+      if (MODBUS_DISABLED) Serial.println("Autocalibrating drums...");
   for (int d = 0; d < NUM_DRUMS; d++)
   {
     drum[d].set_CS_AutocaL_Millis(5000);
@@ -311,7 +381,7 @@ void setupDrums()
 //   // capacitive sensor library
 //   sensor.set_CS_AutocaL_Millis(0xFFFFFFFF);
 
-  Serial.println("Beginning game!");
+  if (MODBUS_DISABLED) Serial.println("Beginning game!");
 }
 
 void updateDrums()
