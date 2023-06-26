@@ -414,6 +414,7 @@ void newRound()
 
 void initGameState()
 {
+    score = 0;
     if (enable_serial_debug) Serial.println("INIT GAME STATE");
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS + 100;
     newRound();
