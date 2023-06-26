@@ -20,12 +20,14 @@
 
 const uint16_t id = 1;
 
-const uint32_t baud = 9600;
+const uint32_t baud = 115200;
 const uint8_t config = SERIAL_8E1;
 const uint16_t bufferSize = 256;
 const uint8_t dePin = A0;
 
-const uint8_t inputRegisters = 1;
+const uint8_t inputRegisters = 2;
+
+uint16_t resendBuffer;
 
 uint8_t buffer[bufferSize];
 ModbusRTUSlave modbus(Serial, buffer, bufferSize, dePin);
@@ -137,14 +139,24 @@ int32_t inputRegisterRead(uint16_t address)
 {
     if (address < inputRegisters )
     {
-        if (triggered)
+        switch (address)
         {
-            return triggeredDrumId + 1;
-            triggered = false;
-        }
-        else 
-        {
-            return 0;
+        case 0:
+            if (triggered)
+            {
+                triggered = false;
+                resendBuffer = triggeredDrumId + 1;
+                return triggeredDrumId + 1; // -1 is reserved for errors, so drumId has to be sent starting at 1
+            }
+            else
+            {
+                return 0; // No drum touched!
+            }
+            break;
+        case 1:
+            return resendBuffer;
+        default:
+            return -1;
         }
     }
     else
