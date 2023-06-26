@@ -34,6 +34,7 @@ ModbusRTUSlave modbus(Serial, buffer, bufferSize, dePin);
 
 int32_t triggered = false;
 int32_t triggeredDrumId = 0;
+uint8_t bigFlameScore = 5;
 
 #define NEOPIXEL_RING1_PIN 3
 #define NEOPIXEL_RING2_PIN 4
@@ -146,7 +147,11 @@ int32_t inputRegisterRead(uint16_t address)
             {
                 triggered = false;
                 resendBuffer = triggeredDrumId + 1;
-                return triggeredDrumId + 1; // -1 is reserved for errors, so drumId has to be sent starting at 1
+                if (score % bigFlameScore == 0 )
+                {
+                    return 5; // 5 is the trigger for the larger flame!
+                }
+                return triggeredDrumId + 1; // -1 is reserved for errors, 0 for no trigger, so drumId has to be sent starting at 1
             }
             else
             {
