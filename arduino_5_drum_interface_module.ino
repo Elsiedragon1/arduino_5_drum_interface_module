@@ -103,6 +103,8 @@ void modbusUpdate();
 void updateLights();
 void updateGame();
 
+uint16_t score = 0;
+
 // ============== MAIN task =======================================================
 // TODO Make the game non-blocking so that we can communicate with the modbus whilst
 // the game is in progress
@@ -277,11 +279,6 @@ enum MODE {
 uint8_t mode = IDLE;
 uint8_t lastMode = IDLE;
 
-uint16_t score = 0;
-uint16_t sessionHighscore = 0;
-uint16_t alltimeHighscore = 0;
-
-uint16_t stage = 0;
 
 // ============== Drums task ======================================================
 void setupDrums()
