@@ -25,7 +25,7 @@ const uint8_t config = SERIAL_8E1;
 const uint16_t bufferSize = 256;
 const uint8_t dePin = A0;
 
-const uint8_t inputRegisters = 2;
+const uint8_t inputRegisters = 4;
 
 uint16_t resendBuffer;
 
@@ -54,7 +54,7 @@ Adafruit_NeoPixel ring[] = {
 
 #define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
 
-#define NUM_COLOUR_PRESETS 4 //6
+#define NUM_COLOUR_PRESETS 4
 
 uint32_t colourPreset[] = {
     Adafruit_NeoPixel::Color(0,   0,   255), //blue
@@ -103,7 +103,18 @@ void modbusUpdate();
 void updateLights();
 void updateGame();
 
-uint16_t score = 0;
+// Stuff that needs to be sent over modbus ... 
+enum MODE {
+  IDLE = 0,
+  BUSK = 1,
+  GAME = 2,
+  FAIL = 3
+};
+
+uint32_t mode = IDLE;
+uint32_t lastMode = IDLE;
+
+uint32_t score = 0;
 
 // ============== MAIN task =======================================================
 // TODO Make the game non-blocking so that we can communicate with the modbus whilst
@@ -136,8 +147,15 @@ void loop()
 }
 
 // ============== Modbud ========================================================
-// TODO: Add a function to resend last transmission if the CRC check doesn't pass
-// TODO: Keep track of score here, as well as the RPi, to keep the game in sync.
+/*
+*   Register Map!
+*   Address     |   Register        |   Notes
+*   0           |   Trigger         |   The drum that has been triggered
+*   1           |   Resend Trigger  |   A missed drum hit (and no flames) would be very sad, so it is absolutely necessary to recieve this signal!
+*               |                   |   The trigger can't be guarenteed to be the same later, so it cannot be resent later!
+*   2           |   Game State      |   Is the game being played or is it idle/reset/etc. Can be updated later is a message is missed/mangled.
+*   3           |   Score           |   The current score. Can be updated later if a message is missed/mangled.
+*/
 int32_t inputRegisterRead(uint16_t address)
 {
     if (address < inputRegisters )
@@ -148,20 +166,26 @@ int32_t inputRegisterRead(uint16_t address)
             if (triggered)
             {
                 triggered = false;
-                resendBuffer = triggeredDrumId + 1;
-                if (score % bigFlameScore == 0 )
+                if (score > 0 && score % bigFlameScore == 0 )
                 {
+                    resendBuffer = 5;
                     return 5; // 5 is the trigger for the larger flame!
                 }
+                resendBuffer = triggeredDrumId + 1;
                 return triggeredDrumId + 1; // -1 is reserved for errors, 0 for no trigger, so drumId has to be sent starting at 1
             }
             else
             {
+                resendBuffer = 0;
                 return 0; // No drum touched!
             }
             break;
         case 1:
             return resendBuffer;
+        case 2:
+            return mode;
+        case 3:
+            return score;
         default:
             return -1;
         }
@@ -180,7 +204,7 @@ void modbusSetup()
     Serial.begin(baud, config);
 
     modbus.begin(id, baud, config);
-    modbus.configureInputRegisters(1, inputRegisterRead);
+    modbus.configureInputRegisters(inputRegisters, inputRegisterRead);
 }
 
 void modbusUpdate()
@@ -269,17 +293,6 @@ int8_t getTriggeredDrum()
     }
 }
 
-enum MODE {
-  IDLE = 0,
-  BUSK = 1,
-  GAME = 2,
-  FAIL = 3
-};
-
-uint8_t mode = IDLE;
-uint8_t lastMode = IDLE;
-
-
 // ============== Drums task ======================================================
 void setupDrums()
 {
@@ -288,13 +301,10 @@ void setupDrums()
     for (int d = 0; d < NUM_DRUMS; d++)
     {
         drum[d].set_CS_AutocaL_Millis(5000);
+        // drum[d].set_CS_AutocaL_Millis(0xFFFFFFFF); // Disable the automatic re-calibration feature
         maxCapacitance[d] = INITIAL_ESTIMATED_MAX;
     }
     delay(5000);
-
-    //   // Disable the automatic re-calibration feature of the
-    //   // capacitive sensor library
-    //   drum[0].set_CS_AutocaL_Millis(0xFFFFFFFF);
 
     if (enable_serial_debug) Serial.println("Beginning game!");
 }
