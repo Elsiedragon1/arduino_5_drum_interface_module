@@ -17,8 +17,9 @@
 //  Modbus Setup
 //  From https://github.com/CMB27/ModbusRTUSlave/
 #include <ModbusRTUSlave.h>
+//  Must be running version 1.0.5!
 
-const uint16_t id = 1;
+const uint16_t id = 5;
 
 const uint32_t baud = 115200;
 const uint8_t config = SERIAL_8E1;
@@ -26,6 +27,7 @@ const uint16_t bufferSize = 256;
 const uint8_t dePin = A0;
 
 const uint8_t inputRegisters = 4;
+const uint8_t holdingRegisters = 1;
 
 uint16_t resendBuffer;
 
@@ -111,6 +113,7 @@ enum MODE {
   FAIL = 3
 };
 
+int16_t setMode = IDLE;
 uint32_t mode = IDLE;
 uint32_t lastMode = IDLE;
 
@@ -146,7 +149,7 @@ void loop()
     updateGame();
 }
 
-// ============== Modbud ========================================================
+// ============== Modbus ========================================================
 /*
 *   Register Map!
 *   Address     |   Register        |   Notes
@@ -196,6 +199,30 @@ int32_t inputRegisterRead(uint16_t address)
     }
 }
 
+int16_t holdingRegisterRead(uint16_t address)
+{
+    if (address < holdingRegisters)
+    {
+        return mode;
+    } else {
+        return -1;
+    }
+}
+bool holdingRegisterWrite(uint16_t address, uint16_t data)
+{
+    if (address < holdingRegisters)
+    {
+        if ( data >= 0 && data <= 3 && mode == IDLE)        //  Only allow change of mode in IDLE state?
+        {
+            setMode = data
+            return 0;
+        }
+        return -1;
+    } else {
+        return -1;
+    }
+}
+
 void modbusSetup()
 {
     pinMode(A0, OUTPUT);
@@ -205,6 +232,7 @@ void modbusSetup()
 
     modbus.begin(id, baud, config);
     modbus.configureInputRegisters(inputRegisters, inputRegisterRead);
+    modbus.configureHoldingRegisters(holdingRegisters, holdingRegisterRead, holdingRegisterWrite);
 }
 
 void modbusUpdate()
@@ -493,8 +521,17 @@ void initIdleState()
 void updateIdleState()
 {
     if ( currentTick - initStartTick > initStateInterval )
+    //  Maybe something like ... if ( setMode != IDLE ) ...
     {
+        //  Starts a new game automatically
         mode = GAME;
+
+        //  Get the instruction from the controller to start a new game!
+        //if (setMode == GAME)
+        //{
+        //    setMode = IDLE;
+        //    mode = GAME;
+        //} // BUSK is another option!
     }
 }
 
