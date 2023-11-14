@@ -15,9 +15,8 @@
 #include <Adafruit_NeoPixel.h>
 
 //  Modbus Setup
-//  From https://github.com/CMB27/ModbusRTUSlave/
-#include <ModbusRTUSlave.h>
-//  Must be running version 1.0.5!
+//  Modified library to allow for multiple slaves!
+#include <ModbusMaster.h>
 
 const uint16_t id = 5;
 
@@ -26,13 +25,26 @@ const uint8_t config = SERIAL_8E1;
 const uint16_t bufferSize = 256;
 const uint8_t dePin = A0;
 
-const uint8_t inputRegisters = 4;
-const uint8_t holdingRegisters = 1;
+//  Modbus master functions
+ModbusMaster node;
 
-uint16_t resendBuffer;
-
-uint8_t buffer[bufferSize];
-ModbusRTUSlave modbus(Serial, buffer, bufferSize, dePin);
+// idle callback function; gets called during idle time between TX and RX
+void idle()
+{
+    delay(2);
+}
+// preTransmission callback function; gets called before writing a Modbus message
+void preTransmission()
+{
+    // Figure out what this should be for a given baud!
+    delay(2);
+    digitalWrite(dePin, HIGH);
+}
+// postTransmission callback function; gets called after a Modbus message has been sent
+void postTransmission()
+{
+    digitalWrite(dePin, LOW);
+}
 
 int32_t triggered = false;
 int32_t triggeredDrumId = 0;
@@ -53,8 +65,6 @@ Adafruit_NeoPixel ring[] = {
     Adafruit_NeoPixel(16, NEOPIXEL_RING4_PIN, NEO_GRB + NEO_KHZ800),
     Adafruit_NeoPixel(16, NEOPIXEL_RING5_PIN, NEO_GRB + NEO_KHZ800)
 };
-
-#define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
 
 #define NUM_COLOUR_PRESETS 4
 
@@ -117,8 +127,6 @@ int16_t setMode = IDLE;
 uint32_t mode = IDLE;
 uint32_t lastMode = IDLE;
 
-uint32_t score = 0;
-
 // ============== MAIN task =======================================================
 // TODO Make the game non-blocking so that we can communicate with the modbus whilst
 // the game is in progress
@@ -144,101 +152,33 @@ uint32_t currentTick = 0;
 void loop()
 {
     currentTick = millis();
-    //  Check for modbus as fast as we can!
-    modbusUpdate();
     updateGame();
 }
 
 // ============== Modbus ========================================================
-/*
-*   Register Map!
-*   Address     |   Register        |   Notes
-*   0           |   Trigger         |   The drum that has been triggered
-*   1           |   Resend Trigger  |   A missed drum hit (and no flames) would be very sad, so it is absolutely necessary to recieve this signal!
-*               |                   |   The trigger can't be guarenteed to be the same later, so it cannot be resent later!
-*   2           |   Game State      |   Is the game being played or is it idle/reset/etc. Can be updated later is a message is missed/mangled.
-*   3           |   Score           |   The current score. Can be updated later if a message is missed/mangled.
-*/
-int32_t inputRegisterRead(uint16_t address)
-{
-    if (address < inputRegisters )
-    {
-        switch (address)
-        {
-        case 0:
-            if (triggered)
-            {
-                triggered = false;
-                if (score > 0 && score % bigFlameScore == 0 )
-                {
-                    resendBuffer = 5;
-                    return 5; // 5 is the trigger for the larger flame!
-                }
-                resendBuffer = triggeredDrumId + 1;
-                return triggeredDrumId + 1; // -1 is reserved for errors, 0 for no trigger, so drumId has to be sent starting at 1
-            }
-            else
-            {
-                resendBuffer = 0;
-                return 0; // No drum touched!
-            }
-            break;
-        case 1:
-            return resendBuffer;
-        case 2:
-            return mode;
-        case 3:
-            return score;
-        default:
-            return -1;
-        }
-    }
-    else
-    {
-        return -1;
-    }
-}
 
-int16_t holdingRegisterRead(uint16_t address)
-{
-    if (address < holdingRegisters)
-    {
-        return mode;
-    } else {
-        return -1;
-    }
-}
-bool holdingRegisterWrite(uint16_t address, uint16_t data)
-{
-    if (address < holdingRegisters)
-    {
-        if ( data >= 0 && data <= 3 && mode == IDLE)        //  Only allow change of mode in IDLE state?
-        {
-            setMode = data;
-            return true;
-        }
-        return false;
-    } else {
-        return false;
-    }
-}
+//  IDs for the Nodes on the system:
+#define SNAKE_HEAD  1
+#define SNAKE_BODY  2
+#define SAXAPHONES  3
+#define SCISSOR     4
+//#define DRUM_MODULE 5
+#define RPI         6
+
+
 
 void modbusSetup()
 {
-    pinMode(A0, OUTPUT);
-    digitalWrite(A0, LOW);
+    pinMode(dePin, OUTPUT);
+    digitalWrite(dePin, LOW);
 
     Serial.begin(baud, config);
 
-    modbus.begin(id, baud, config);
-    modbus.configureInputRegisters(inputRegisters, inputRegisterRead);
-    modbus.configureHoldingRegisters(holdingRegisters, holdingRegisterRead, holdingRegisterWrite);
-}
+    node.begin(Serial);
 
-void modbusUpdate()
-{
-    //  Update as fast as possible ...
-    modbus.poll();
+    node.idle(idle);
+    node.preTransmission(preTransmission);
+    node.postTransmission(postTransmission);
 }
 
 // ============== Lights task (everything left from old setup/loop) ===============
@@ -339,6 +279,13 @@ void setupDrums()
 
 //  ============= GAMESTATES ====================================================
 
+//  ============= GAME VARIABLES ================================================
+#define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
+uint8_t transitionScore = 10;
+uint16_t score = 0;
+uint16_t highScore = 0;
+uint16_t lastScore = 0;
+
 //  ============= RESET STATE ===================================================
 uint32_t resetStateTick = 0;
 uint32_t resetStateDuration = 4000;
@@ -409,6 +356,9 @@ uint32_t gameStateInterval = 1000/30; // 30FPS
 uint32_t roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;  // In milliseconds
 uint32_t roundStartTick = 0;
 
+// For debugging on  my stripped down system!
+bool ledCountdown = false;
+
 // Updates all the lights to their corresponding colours!
 void updateAllLights()
 {
@@ -433,7 +383,15 @@ void updateTargetLight()
         }
         else
         {
-            ring[NUM_RINGS-1].setPixelColor(i, black);
+            if ( ledCountdown)
+            {
+              ring[NUM_RINGS-1].setPixelColor(i, black);
+            }
+            else
+            {
+              ring[NUM_RINGS-1].setPixelColor(i, colourPreset[drumColour[targetDrum]]);
+            }
+            
         }
     }
     ring[NUM_RINGS-1].show();
@@ -444,7 +402,15 @@ void newRound()
     if (enable_serial_debug) Serial.println("NEW ROUND!");
     targetDrum = random(NUM_DRUMS);
     permutateColours();
-    roundDuration = roundDuration - 100;
+    if ( score < transitionScore )
+    {
+        // Do not change roundDuration ... leave at 4s
+    }
+    else
+    {
+        roundDuration = float(roundDuration) * 0.95;
+    }
+    
     roundStartTick = currentTick;
 
     updateAllLights();
@@ -454,7 +420,7 @@ void initGameState()
 {
     score = 0;
     if (enable_serial_debug) Serial.println("INIT GAME STATE");
-    roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS + 100;
+    roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
     newRound();
 }
 
@@ -488,9 +454,34 @@ void updateGameState()
                 if (triggeredDrum == targetDrum)
                 {
                     score += 1;
-                    triggered = true;                   // For Modbus communication
-                    triggeredDrumId = triggeredDrum;    // For Modbus communication
+                    
+                    // send trigger for saxaphone / snake flamethrowers from here!
+                    if (score > transitionScore )
+                    {
+                        if (score %bigFlameScore == 0 )
+                        {
+                            node.writeSingleCoil(5,1,SAXAPHONES);
+                        }
+                        else
+                        {
+                            node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);   //  Returns 0 on success!
+                        }
+                        
+                    }
+                    else
+                    {
+                        if (score %bigFlameScore == 0 )
+                        {
+                            node.writeSingleCoil(5,1,SAXAPHONES);
+                        }
+                        else
+                        {
+                            node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
+                        }
+                    }
+
                     newRound();
+
                 } else {
                     //  You touched the wrong drum!
                     mode = FAIL;
@@ -524,7 +515,7 @@ void updateIdleState()
     //  Maybe something like ... if ( setMode != IDLE ) ...
     {
         //  Starts a new game automatically
-        //mode = GAME;
+        mode = GAME;
 
         //  Get the instruction from the controller to start a new game!
         if (setMode == GAME)
