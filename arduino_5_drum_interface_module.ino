@@ -214,12 +214,12 @@ bool holdingRegisterWrite(uint16_t address, uint16_t data)
     {
         if ( data >= 0 && data <= 3 && mode == IDLE)        //  Only allow change of mode in IDLE state?
         {
-            setMode = data
-            return 0;
+            setMode = data;
+            return true;
         }
-        return -1;
+        return false;
     } else {
-        return -1;
+        return false;
     }
 }
 
@@ -524,14 +524,14 @@ void updateIdleState()
     //  Maybe something like ... if ( setMode != IDLE ) ...
     {
         //  Starts a new game automatically
-        mode = GAME;
+        //mode = GAME;
 
         //  Get the instruction from the controller to start a new game!
-        //if (setMode == GAME)
-        //{
-        //    setMode = IDLE;
-        //    mode = GAME;
-        //} // BUSK is another option!
+        if (setMode == GAME)
+        {
+            setMode = IDLE;
+            mode = GAME;
+        } // BUSK is another option!
     }
 }
 
