@@ -492,6 +492,10 @@ void updateGameState()
                 updateTargetLight();
             }
         }
+
+        // I don't care if this fails for now ...
+        uint8_t result = node.writeSingleRegister(0, score, RPI);
+
         gameStateTick = currentTick;
     }
 }
