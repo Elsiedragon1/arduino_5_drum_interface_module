@@ -294,22 +294,52 @@ uint32_t resetAnimationInterval = 500; // This is the update frequency of the bl
 
 bool resetAnimationState = true;
 
+//bool scissorResetStatusCheck = false;
+
 void initResetState()
 {   
     if (enable_serial_debug) Serial.println("INIT RESET STATE");
     resetStateTick = currentTick;
     resetAnimationState = true;
+
+    //  Start the process of resetting the scissor lift and snake bodies etc ...
+//    uint8_t result = node.writeRegister(0, 0, SCISSOR);  //  LOWER scissor lift!
+
+//    while (result != 0)
+//    {
+//        result = node.writeRegister(0, 0, SCISSOR);   //  Absolutely make sure this message has been sent!
+//    }
 }
 
 void updateResetState()
 {   
     if (currentTick - resetStateTick >= resetStateDuration)
     {
+
+        //  Make sure the Scissor lift has lowered!
+//        uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
+
+//       if (result == 0)
+//        {
+//            if (node.getRespomseBuffer(0x00) == 0)
+//            {
+                //  The scissor lift has been lowered!
+//                scissorResetStatusCheck = true;
+//            }
+//        }
+
+//        if (scissorResetStatusCheck /* && snakeBodyResetStatusCheck etc ... */)
+//        {
+            //  All checks passed! Set to IDLE and reset checks for next time!
+//            mode = IDLE;
+//            scissorResetStatusCheck = false;
+//        }
         mode = IDLE;
         return;
     }
     else
-    {
+    {   
+        //  This is the blinkey light animation!
         if (currentTick - resetAnimationTick >= resetAnimationInterval )
         {
             if (resetAnimationState)
@@ -357,7 +387,7 @@ uint32_t roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;  // In milliseconds
 uint32_t roundStartTick = 0;
 
 // For debugging on  my stripped down system!
-bool ledCountdown = false;
+bool ledCountdown = true;
 
 // Updates all the lights to their corresponding colours!
 void updateAllLights()
