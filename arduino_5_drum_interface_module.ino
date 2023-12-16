@@ -299,10 +299,13 @@ bool updateCoinAcceptor()
 
 //  ============= GAME VARIABLES ================================================
 #define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
-uint8_t transitionScore = 10;
+float roundTimeMultiplier = 0.95;
+uint16_t minimumRoundTime = 300;
 uint16_t score = 0;
 uint16_t highScore = 0;
 uint16_t lastScore = 0;
+
+bool tutorialSection = true;
 
 //  ============= RESET STATE ===================================================
 uint32_t resetStateTick = 0;
@@ -448,13 +451,21 @@ void newRound()
     if (enable_serial_debug) Serial.println("NEW ROUND!");
     targetDrum = random(NUM_DRUMS);
     permutateColours();
-    if ( score < transitionScore )
+    if ( tutorialSection )
     {
-        // Do not change roundDuration ... leave at 4s
+        // Do not change roundDuration ... leave at 4s!
     }
     else
     {
-        roundDuration = float(roundDuration) * 0.95;
+        
+        if (roundDuration <= minimumRoundTime)
+        {
+            roundDuration = minimumRoundTime;
+        }
+        else
+        {
+            roundDuration = float(roundDuration) * roundTimeMultiplier;
+        }
     }
     
     roundStartTick = currentTick;
@@ -465,9 +476,25 @@ void newRound()
 void initGameState()
 {
     score = 0;
+    tutorialSection = true;
     if (enable_serial_debug) Serial.println("INIT GAME STATE");
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
     newRound();
+}
+
+uint8_t checkTutorialSection()
+{
+    //  The tutorial section is when the lift is still rising!
+    uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
+
+    if (result == 0)
+    {
+        if (node.getResponseBuffer(0x00) == 2)
+        {
+            //  The scissor lift has risen!
+            tutorialSection = false;
+        }
+    }
 }
 
 void updateGameState()
@@ -502,9 +529,9 @@ void updateGameState()
                     score += 1;
                     
                     // send trigger for saxaphone / snake flamethrowers from here!
-                    if (score > transitionScore )
+                    if ( tutorialSection == false )
                     {
-                        if (score %bigFlameScore == 0 )
+                        if (score % bigFlameScore == 0 )
                         {
                             node.writeSingleCoil(5,1,SAXAPHONES);
                         }
@@ -516,7 +543,7 @@ void updateGameState()
                     }
                     else
                     {
-                        if (score %bigFlameScore == 0 )
+                        if (score % bigFlameScore == 0 )
                         {
                             node.writeSingleCoil(5,1,SAXAPHONES);
                         }
@@ -556,6 +583,11 @@ void updateGameState()
 
         // I don't care if this fails for now ...
         uint8_t result = node.writeSingleRegister(0, score, RPI);
+
+        if (tutorialSection)
+        {
+            checkTutorialSection();
+        }
 
         gameStateTick = currentTick;
     }

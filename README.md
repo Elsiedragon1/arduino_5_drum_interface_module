@@ -2,12 +2,13 @@
 
 ## Game Design / Flow
 
- - Insert token (push button) to start the game!
+ - ~~Insert token~~ (push button) to start the game!
  - Game starts couting down (4s)
  - First hit! SCISSOR starts to rise (ID4 REG0 2)
- - The tutorial section: The round time doesn't change but the score increases.
+ - The tutorial section: The round time doesn't change but the score increases (DONE)
  - Once the scissor lift reaches the top (ID4 REG0 2)
-    -   Pause for a bit? And flash a message on the screen!
+    -   Hard mode!
+    -   Pause for a bit? And flash a message on the screen
     -   Trigger the big flamethrower (ID3 COIL5 TRUE)
     -   Transfer individual hits to SNAKEHEADS (ID1) from SAXAPHONES (ID3)
     -   On each 5th hit set the SAXAPHONES off instead of the SNAKEHEADS
