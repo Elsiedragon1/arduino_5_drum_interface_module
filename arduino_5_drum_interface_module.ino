@@ -145,6 +145,7 @@ void setup()
     }
     setupDrums();
     setupLights();
+    setupCoinAcceptor();
 }
 
 uint32_t currentTick = 0;
@@ -165,6 +166,10 @@ void loop()
 //#define DRUM_MODULE 5
 #define RPI         6
 
+//  SCISSOR LIFT COMMANDS
+#define LOWERED 0
+#define RISEN 2
+#define STOP 4
 
 
 void modbusSetup()
@@ -277,6 +282,19 @@ void setupDrums()
     if (enable_serial_debug) Serial.println("Beginning game!");
 }
 
+// ============== COIN ACCEPTOR =================================================
+
+// This is a dummy system with just a button for now!
+void setupCoinAcceptor()
+{
+    pinMode(A5, INPUT_PULLUP);
+}
+
+bool updateCoinAcceptor()
+{
+    return !digitalRead(A5);
+}
+
 //  ============= GAMESTATES ====================================================
 
 //  ============= GAME VARIABLES ================================================
@@ -294,7 +312,7 @@ uint32_t resetAnimationInterval = 500; // This is the update frequency of the bl
 
 bool resetAnimationState = true;
 
-//bool scissorResetStatusCheck = false;
+bool scissorResetStatusCheck = false;
 
 void initResetState()
 {   
@@ -303,12 +321,12 @@ void initResetState()
     resetAnimationState = true;
 
     //  Start the process of resetting the scissor lift and snake bodies etc ...
-//    uint8_t result = node.writeRegister(0, 0, SCISSOR);  //  LOWER scissor lift!
+    uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);  //  LOWER scissor lift!
 
-//    while (result != 0)
-//    {
-//        result = node.writeRegister(0, 0, SCISSOR);   //  Absolutely make sure this message has been sent!
-//    }
+    while (result != 0)
+    {
+        result = node.writeSingleRegister(0, LOWERED, SCISSOR);   //  Absolutely make sure this message has been sent!
+    }
 }
 
 void updateResetState()
@@ -317,25 +335,23 @@ void updateResetState()
     {
 
         //  Make sure the Scissor lift has lowered!
-//        uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
+        uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
 
-//       if (result == 0)
-//        {
-//            if (node.getRespomseBuffer(0x00) == 0)
-//            {
+        if (result == 0)
+        {
+            if (node.getResponseBuffer(0x00) == 0)
+            {
                 //  The scissor lift has been lowered!
-//                scissorResetStatusCheck = true;
-//            }
-//        }
+                scissorResetStatusCheck = true;
+            }
+        }
 
-//        if (scissorResetStatusCheck /* && snakeBodyResetStatusCheck etc ... */)
-//        {
+        if (scissorResetStatusCheck /* && snakeBodyResetStatusCheck etc ... */)
+        {
             //  All checks passed! Set to IDLE and reset checks for next time!
-//            mode = IDLE;
-//            scissorResetStatusCheck = false;
-//        }
-        mode = IDLE;
-        return;
+            mode = IDLE;
+            scissorResetStatusCheck = false;
+        }
     }
     else
     {   
@@ -413,7 +429,7 @@ void updateTargetLight()
         }
         else
         {
-            if ( ledCountdown)
+            if (ledCountdown)
             {
               ring[NUM_RINGS-1].setPixelColor(i, black);
             }
@@ -523,6 +539,21 @@ void updateGameState()
             }
         }
 
+        if (score != lastScore)
+        {
+            if (score == 1)
+            {
+                uint8_t result = node.writeSingleRegister(0, RISEN, SCISSOR);  //  LOWER scissor lift!
+
+                while (result != 0)
+                {
+                    result = node.writeSingleRegister(0, RISEN, SCISSOR);   //  Absolutely make sure this message has been sent!
+                }
+            }
+
+            lastScore = score;
+        }
+
         // I don't care if this fails for now ...
         uint8_t result = node.writeSingleRegister(0, score, RPI);
 
@@ -535,7 +566,7 @@ void updateGameState()
 // For now ... just timeout after a couple seconds and start a new game!
 
 uint32_t initStartTick = 0;
-uint32_t initStateInterval = 5000;
+uint32_t initStateInterval = 1000/30;
 
 void initIdleState()
 {
@@ -546,17 +577,16 @@ void initIdleState()
 void updateIdleState()
 {
     if ( currentTick - initStartTick > initStateInterval )
-    //  Maybe something like ... if ( setMode != IDLE ) ...
     {
         //  Starts a new game automatically
-        mode = GAME;
+        //  mode = GAME;
 
-        //  Get the instruction from the controller to start a new game!
-        if (setMode == GAME)
+        //  Check if the start button is pressed!
+        if (updateCoinAcceptor())
         {
-            setMode = IDLE;
+            lastMode = IDLE;
             mode = GAME;
-        } // BUSK is another option!
+        }
     }
 }
 
