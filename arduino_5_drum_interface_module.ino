@@ -69,7 +69,7 @@ Adafruit_NeoPixel ring[] = {
 #define NUM_COLOUR_PRESETS 4
 
 uint32_t colourPreset[] = {
-    Adafruit_NeoPixel::Color(0,   0,   255), //blue
+    Adafruit_NeoPixel::Color(0,   0, 255),   //blue
     Adafruit_NeoPixel::Color(0,   255, 0),   //green
     Adafruit_NeoPixel::Color(255, 0,   0),   //red
     Adafruit_NeoPixel::Color(255, 255, 0),   //yellow
@@ -105,7 +105,7 @@ long maxCapacitance[NUM_DRUMS];
 //  Set MODBUS_DISABLED to 1 stop Modbus communication and allow communication over
 //  USB
 bool enable_serial_debug = false;
-bool enable_drum_debug = true; // Requires enable serial debug to be true also!
+bool enable_drum_debug = false; // Requires enable serial debug to be true also!
 
 // Declarations!
 void setupDrums();
@@ -284,7 +284,6 @@ void setupDrums()
 
 // ============== COIN ACCEPTOR =================================================
 
-// This is a dummy system with just a button for now!
 void setupCoinAcceptor()
 {
     pinMode(A5, INPUT_PULLUP);
@@ -292,7 +291,7 @@ void setupCoinAcceptor()
 
 bool updateCoinAcceptor()
 {
-    return !digitalRead(A5);
+    return digitalRead(A5);
 }
 
 //  ============= GAMESTATES ====================================================
@@ -302,6 +301,8 @@ bool updateCoinAcceptor()
 float roundTimeMultiplier = 0.95;
 uint16_t minimumRoundTime = 300;
 uint16_t score = 0;
+uint16_t tutorialScore = 0;
+uint16_t hardScore = 0;
 uint16_t highScore = 0;
 uint16_t lastScore = 0;
 
@@ -457,14 +458,11 @@ void newRound()
     }
     else
     {
+        roundDuration = float(roundDuration) * roundTimeMultiplier;
         
         if (roundDuration <= minimumRoundTime)
         {
             roundDuration = minimumRoundTime;
-        }
-        else
-        {
-            roundDuration = float(roundDuration) * roundTimeMultiplier;
         }
     }
     
@@ -476,6 +474,8 @@ void newRound()
 void initGameState()
 {
     score = 0;
+    tutorialScore = 0;
+    hardScore = 0;
     tutorialSection = true;
     if (enable_serial_debug) Serial.println("INIT GAME STATE");
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
@@ -484,15 +484,22 @@ void initGameState()
 
 uint8_t checkTutorialSection()
 {
-    //  The tutorial section is when the lift is still rising!
-    uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
-
-    if (result == 0)
+    if (tutorialSection)
     {
-        if (node.getResponseBuffer(0x00) == 2)
+        //  The tutorial section is when the lift is still rising!
+        uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
+
+        if (result == 0)
         {
-            //  The scissor lift has risen!
-            tutorialSection = false;
+            if (node.getResponseBuffer(0x00) == RISEN)
+            {
+                //  The scissor lift has risen!
+                tutorialSection = false;
+                tutorialScore = score;
+                hardScore = 0;
+                //  Fire SAXAPHONE 5! Boom!
+                node.writeSingleCoil(5, 1, SAXAPHONES);
+            }
         }
     }
 }
@@ -501,6 +508,7 @@ void updateGameState()
 {
     if ( currentTick - gameStateTick >= gameStateInterval )
     {
+        checkTutorialSection();
         if (currentTick - roundStartTick >= roundDuration)
         {
             //  Round timeout! You have lost!
@@ -529,11 +537,63 @@ void updateGameState()
                     score += 1;
                     
                     // send trigger for saxaphone / snake flamethrowers from here!
-                    if ( tutorialSection == false )
+                    if (!tutorialSection)
                     {
-                        if (score % bigFlameScore == 0 )
+                        hardScore += 1; // Also add score to hard score section!
+
+                        uint8_t multiple = hardScore / bigFlameScore;
+
+                        if (hardScore % bigFlameScore == 0 )
                         {
-                            node.writeSingleCoil(5,1,SAXAPHONES);
+                            switch (multiple)
+                            {
+                            case 0:
+                                node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
+                                break;
+                            case 1:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                break;
+                            case 2:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                break;
+                            case 3:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(2,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                break;
+                            case 4:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(2,1,SAXAPHONES);
+                                node.writeSingleCoil(3,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                break;
+                            case 5:
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                                break;
+                            case 6:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                                break;
+                            case 7:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                                break;
+                            case 8:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(2,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                                break;
+                            default:
+                                node.writeSingleCoil(1,1,SAXAPHONES);
+                                node.writeSingleCoil(2,1,SAXAPHONES);
+                                node.writeSingleCoil(3,1,SAXAPHONES);
+                                node.writeSingleCoil(4,1,SAXAPHONES);
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                                break;
+                            }
                         }
                         else
                         {
@@ -570,7 +630,7 @@ void updateGameState()
         {
             if (score == 1)
             {
-                uint8_t result = node.writeSingleRegister(0, RISEN, SCISSOR);  //  LOWER scissor lift!
+                uint8_t result = node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
 
                 while (result != 0)
                 {
@@ -583,11 +643,6 @@ void updateGameState()
 
         // I don't care if this fails for now ...
         uint8_t result = node.writeSingleRegister(0, score, RPI);
-
-        if (tutorialSection)
-        {
-            checkTutorialSection();
-        }
 
         gameStateTick = currentTick;
     }
@@ -616,7 +671,6 @@ void updateIdleState()
         //  Check if the start button is pressed!
         if (updateCoinAcceptor())
         {
-            lastMode = IDLE;
             mode = GAME;
         }
     }
