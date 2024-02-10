@@ -95,7 +95,7 @@ CapacitiveSensor drum[] = {
 
 #define CAPACITANCE_SAMPLES 30 // (higher is better "resolution" but misses quick taps; see lib docs)
 
-#define THRESHOLD_PERCENT_OF_MAX 20
+#define THRESHOLD_PERCENT_OF_MAX 20  // (Was 20 up until 03/02/2024)
 #define INITIAL_ESTIMATED_MAX 500   // value depends on cap samples; stops false trigger before 1st tap
 
 long maxCapacitance[NUM_DRUMS];
@@ -104,8 +104,8 @@ long maxCapacitance[NUM_DRUMS];
 //  debugging capacitative sensing and the drum gameplay.
 //  Set MODBUS_DISABLED to 1 stop Modbus communication and allow communication over
 //  USB
-bool enable_serial_debug = false;
-bool enable_drum_debug = false; // Requires enable serial debug to be true also!
+const bool enable_serial_debug = false;
+const bool enable_drum_debug = true; // Requires enable serial debug to be true also!
 
 // Declarations!
 void setupDrums();
@@ -202,10 +202,11 @@ void setupLights()
     }
 }
 
+uint8_t lastBestDrumId = -1;
+
 int8_t getTriggeredDrum()
 {
     static long curCapacitance[NUM_DRUMS];
-    static uint8_t lastBestDrumId = -1;
 
     for (int d = 0; d < NUM_DRUMS; d++)
     {
@@ -244,9 +245,31 @@ int8_t getTriggeredDrum()
             bestThresholdFactor = thresholdFactor;
             bestDrumId = d;
         }
+        if(enable_serial_debug)
+        {
+            Serial.print(thresholdFactor);
+            Serial.print(" ");
+        }
+    }
+    if(enable_serial_debug) Serial.println();
+    
+    if (enable_serial_debug)
+    {
+        if (enable_drum_debug)
+        {
+            // Print the result of the sensor readings
+            // Note that the capacitance value is an arbitrary number
+            // See: https://playground.arduino.cc/Main/CapacitiveSensor/ for details
+            for (int d = 0; d < NUM_DRUMS; d++)
+            {
+                Serial.print(maxCapacitance[d]);
+                Serial.print(" ");
+            }
+            Serial.println("");
+        }
     }
 
-    if (bestThresholdFactor > 1.0f)
+    if (bestThresholdFactor > 1.1f) // 1.0f
     {
         if (bestDrumId != lastBestDrumId) // Protect against still holding the drum down!
         {
@@ -261,6 +284,7 @@ int8_t getTriggeredDrum()
     }
     else
     {
+        if(enable_serial_debug) Serial.println("Lifted hand!");
         lastBestDrumId = -1;
         return -1;
     }
@@ -286,12 +310,13 @@ void setupDrums()
 
 void setupCoinAcceptor()
 {
+    if (enable_serial_debug) Serial.println("Initializing coin acceptor...");
     pinMode(A5, INPUT_PULLUP);
 }
 
 bool updateCoinAcceptor()
 {
-    return digitalRead(A5);
+    return !digitalRead(A5);
 }
 
 //  ============= GAMESTATES ====================================================
@@ -325,11 +350,13 @@ void initResetState()
     resetAnimationState = true;
 
     //  Start the process of resetting the scissor lift and snake bodies etc ...
-    uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);  //  LOWER scissor lift!
-
-    while (result != 0)
+    if (!enable_serial_debug)
     {
-        result = node.writeSingleRegister(0, LOWERED, SCISSOR);   //  Absolutely make sure this message has been sent!
+        node.writeSingleRegister(0, LOWERED, SCISSOR);  //  LOWER scissor lift!
+
+        // Make sure there is enough time to update all the score / mode information
+        delay(100);
+        uint8_t result = node.writeSingleRegister(0, score, RPI);
     }
 }
 
@@ -337,17 +364,29 @@ void updateResetState()
 {   
     if (currentTick - resetStateTick >= resetStateDuration)
     {
-
-        //  Make sure the Scissor lift has lowered!
-        uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
-
-        if (result == 0)
+        if (!enable_serial_debug)
         {
-            if (node.getResponseBuffer(0x00) == 0)
+            //  Make sure the Scissor lift has lowered!
+            uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
+
+            if (result == 0)
             {
-                //  The scissor lift has been lowered!
-                scissorResetStatusCheck = true;
+                if (node.getResponseBuffer(0x00) == 0)
+                {
+                    //  The scissor lift has been lowered!
+                    scissorResetStatusCheck = true;
+                }
+                else
+                {
+                    //  If it returns a state of anything other than lowered, it will request again to lower the scissor list
+                    uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);
+                }
             }
+        }
+        else
+        {
+            //  This enables automatic reset when testing the drum unit standalone
+            scissorResetStatusCheck = true;
         }
 
         if (scissorResetStatusCheck /* && snakeBodyResetStatusCheck etc ... */)
@@ -402,7 +441,7 @@ void permutateColours()
 }
 
 uint32_t gameStateTick = 0;
-uint32_t gameStateInterval = 1000/30; // 30FPS
+uint32_t gameStateInterval = 1000/20; // 30FPS
 uint32_t roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;  // In milliseconds
 uint32_t roundStartTick = 0;
 
@@ -486,20 +525,27 @@ uint8_t checkTutorialSection()
 {
     if (tutorialSection)
     {
-        //  The tutorial section is when the lift is still rising!
-        uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
-
-        if (result == 0)
+        if (!enable_serial_debug)
         {
-            if (node.getResponseBuffer(0x00) == RISEN)
+            //  The tutorial section is when the lift is still rising!
+            uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
+
+            if (result == 0)
             {
-                //  The scissor lift has risen!
-                tutorialSection = false;
-                tutorialScore = score;
-                hardScore = 0;
-                //  Fire SAXAPHONE 5! Boom!
-                node.writeSingleCoil(5, 1, SAXAPHONES);
+                if (node.getResponseBuffer(0x00) == RISEN)
+                {
+                    //  The scissor lift has risen!
+                    tutorialSection = false;
+                    tutorialScore = score;
+                    hardScore = 0;
+                    //  Fire SAXAPHONE 5! Boom!
+                    node.writeSingleCoil(5, 1, SAXAPHONES);
+                }
             }
+        }
+        else
+        {
+            //  For debugging purposes we don't need to worry about the tutorial section!
         }
     }
 }
@@ -513,6 +559,7 @@ void updateGameState()
         {
             //  Round timeout! You have lost!
             mode = FAIL;
+
             return;
         }
         else
@@ -537,79 +584,82 @@ void updateGameState()
                     score += 1;
                     
                     // send trigger for saxaphone / snake flamethrowers from here!
-                    if (!tutorialSection)
+                    if (!enable_serial_debug)
                     {
-                        hardScore += 1; // Also add score to hard score section!
-
-                        uint8_t multiple = hardScore / bigFlameScore;
-
-                        if (hardScore % bigFlameScore == 0 )
+                        if (!tutorialSection)
                         {
-                            switch (multiple)
+                            hardScore += 1; // Also add score to hard score section!
+
+                            uint8_t multiple = hardScore / bigFlameScore;
+
+                            if (hardScore % bigFlameScore == 0 )
                             {
-                            case 0:
-                                node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
-                                break;
-                            case 1:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                break;
-                            case 2:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                break;
-                            case 3:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(2,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                break;
-                            case 4:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(2,1,SAXAPHONES);
-                                node.writeSingleCoil(3,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                break;
-                            case 5:
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                                break;
-                            case 6:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                                break;
-                            case 7:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                                break;
-                            case 8:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(2,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                                break;
-                            default:
-                                node.writeSingleCoil(1,1,SAXAPHONES);
-                                node.writeSingleCoil(2,1,SAXAPHONES);
-                                node.writeSingleCoil(3,1,SAXAPHONES);
-                                node.writeSingleCoil(4,1,SAXAPHONES);
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                                break;
+                                switch (multiple)
+                                {
+                                case 0:
+                                    node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
+                                    break;
+                                case 1:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    break;
+                                case 2:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    break;
+                                case 3:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(2,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    break;
+                                case 4:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(2,1,SAXAPHONES);
+                                    node.writeSingleCoil(3,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    break;
+                                case 5:
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                case 6:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                case 7:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                case 8:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(2,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                default:
+                                    node.writeSingleCoil(1,1,SAXAPHONES);
+                                    node.writeSingleCoil(2,1,SAXAPHONES);
+                                    node.writeSingleCoil(3,1,SAXAPHONES);
+                                    node.writeSingleCoil(4,1,SAXAPHONES);
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                }
                             }
+                            else
+                            {
+                                node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);   //  Returns 0 on success!
+                            }
+                            
                         }
                         else
                         {
-                            node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);   //  Returns 0 on success!
-                        }
-                        
-                    }
-                    else
-                    {
-                        if (score % bigFlameScore == 0 )
-                        {
-                            node.writeSingleCoil(5,1,SAXAPHONES);
-                        }
-                        else
-                        {
-                            node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
+                            if (score % bigFlameScore == 0 )
+                            {
+                                node.writeSingleCoil(5,1,SAXAPHONES);
+                            }
+                            else
+                            {
+                                node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
+                            }
                         }
                     }
 
@@ -617,7 +667,16 @@ void updateGameState()
 
                 } else {
                     //  You touched the wrong drum!
-                    mode = FAIL;
+                    if (currentTick - roundStartTick > 200)
+                    {
+                        mode = FAIL;
+                    }
+                    else
+                    {
+                        // This should give a bit of break against the same drum immidiately triggering
+                        // Have another go!
+                    }
+                    
                 }
             }
             else
@@ -628,21 +687,20 @@ void updateGameState()
 
         if (score != lastScore)
         {
-            if (score == 1)
+            if (score >= 1 && tutorialSection == true)
             {
-                uint8_t result = node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
-
-                while (result != 0)
-                {
-                    result = node.writeSingleRegister(0, RISEN, SCISSOR);   //  Absolutely make sure this message has been sent!
-                }
+                //  While in the tutorial section and the score is rising keep sending raise messages
+                if (!enable_serial_debug) node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
             }
+
+            // Quick and dirty way to help RPi keep up with updates
+            //  60ms delay (seems to allow 95% of score messages through)
+            delay(60);
+
+            if (!enable_serial_debug) node.writeSingleRegister(0, score, RPI);
 
             lastScore = score;
         }
-
-        // I don't care if this fails for now ...
-        uint8_t result = node.writeSingleRegister(0, score, RPI);
 
         gameStateTick = currentTick;
     }
