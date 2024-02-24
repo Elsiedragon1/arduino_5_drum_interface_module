@@ -353,9 +353,9 @@ void initResetState()
     if (!enable_serial_debug)
     {
         node.writeSingleRegister(0, LOWERED, SCISSOR);  //  LOWER scissor lift!
-
+        node.writeSingleRegister(0, 0, SNAKE_HEAD);
         // Make sure there is enough time to update all the score / mode information
-        delay(100);
+        delay(60);
         uint8_t result = node.writeSingleRegister(0, score, RPI);
     }
 }
@@ -755,7 +755,12 @@ void updateGameState()
             if (score >= 1 && tutorialSection == true)
             {
                 //  While in the tutorial section and the score is rising keep sending raise messages
-                if (!enable_serial_debug) node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                if (!enable_serial_debug)
+                {
+                    node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                    // Turn on Snakehead LEDs and mouth animations!
+                    node.writeSingleRegister(0, 1, SNAKE_HEAD); // Animate!
+                }
             }
 
             // Quick and dirty way to help RPi keep up with updates
