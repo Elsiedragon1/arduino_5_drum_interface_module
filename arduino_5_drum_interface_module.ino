@@ -460,6 +460,15 @@ void updateAllLights()
     ring[NUM_RINGS-1].show();
 }
 
+void updateAllDrumLightsToTarget()
+{
+    for (int r = 0; r < NUM_RINGS - 1; r++)
+    {
+        ring[r].fill(colourPreset[drumColour[targetDrum]]);
+        ring[r].show();
+    }
+}
+
 void updateTargetLight()
 {
     uint32_t progress = 16 * (currentTick - roundStartTick) / roundDuration;
@@ -486,6 +495,11 @@ void updateTargetLight()
     ring[NUM_RINGS-1].show();
 }
 
+// Tutorial Section info ...
+
+// tutorialSection should be used directly, not checktutorialSection() as this might change after the round starts!
+bool tutorialRoundSuccess = false;
+
 void newRound()
 {
     if (enable_serial_debug) Serial.println("NEW ROUND!");
@@ -495,6 +509,7 @@ void newRound()
     {
         // Do not change roundDuration ... leave at 4s!
         checkTutorialSection();
+        tutorialRoundSuccess = false;
     }
     else
     {
@@ -557,8 +572,23 @@ void updateGameState()
     {
         if (currentTick - roundStartTick >= roundDuration)
         {
-            //  Round timeout! You have lost!
-            mode = FAIL;
+            if (tutorialSection)
+            {
+                if (tutorialRoundSuccess)
+                {
+                    newRound();
+                }
+                else
+                {
+                    mode = FAIL;
+                }
+            }
+            else
+            {
+                //  Round timeout! You have lost!
+                mode = FAIL;
+            }
+            
 
             return;
         }
@@ -579,14 +609,62 @@ void updateGameState()
             if (triggeredDrum >= 0)
             {
                 // Drum strike!
-                if (triggeredDrum == targetDrum)
+                if (tutorialSection)
                 {
-                    score += 1;
-                    
-                    // send trigger for saxaphone / snake flamethrowers from here!
-                    if (!enable_serial_debug)
+                    if (triggeredDrum == targetDrum)
                     {
-                        if (!tutorialSection)
+                        if (!tutorialRoundSuccess)
+                        {
+                            score += 1;
+                            tutorialRoundSuccess = true;
+
+                            updateAllDrumLightsToTarget();
+
+                            if (!enable_serial_debug)
+                            {
+                                if (score % bigFlameScore == 0 )
+                                {
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                }
+                                else
+                                {
+                                    node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        //  You touched the wrong drum!
+                        if (currentTick - roundStartTick > 200)
+                        {
+                            if (tutorialRoundSuccess)
+                            {
+                                //  Ignore any incorrect touches after a success!
+                            }
+                            else
+                            {
+                                mode = FAIL;
+                            }
+                            
+                        }
+                        else
+                        {
+                            // This should give a bit of break against the same drum immidiately triggering
+                            // Have another go!
+                        }
+                    }
+
+                }
+                else
+                {
+                    if (triggeredDrum == targetDrum)
+                    {
+                        
+                        score += 1;
+                        
+                        // send trigger for saxaphone / snake flamethrowers from here!
+                        if (!enable_serial_debug)
                         {
                             hardScore += 1; // Also add score to hard score section!
 
@@ -648,35 +726,22 @@ void updateGameState()
                             {
                                 node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);   //  Returns 0 on success!
                             }
-                            
+                        }
+
+                        newRound();
+
+                    } else {
+                        //  You touched the wrong drum!
+                        if (currentTick - roundStartTick > 200)
+                        {
+                            mode = FAIL;
                         }
                         else
                         {
-                            if (score % bigFlameScore == 0 )
-                            {
-                                node.writeSingleCoil(5,1,SAXAPHONES);
-                            }
-                            else
-                            {
-                                node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
-                            }
+                            // This should give a bit of break against the same drum immidiately triggering
+                            // Have another go!
                         }
                     }
-
-                    newRound();
-
-                } else {
-                    //  You touched the wrong drum!
-                    if (currentTick - roundStartTick > 200)
-                    {
-                        mode = FAIL;
-                    }
-                    else
-                    {
-                        // This should give a bit of break against the same drum immidiately triggering
-                        // Have another go!
-                    }
-                    
                 }
             }
             else
