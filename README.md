@@ -28,3 +28,9 @@
 - ~~On reset!~~
     - ~~Re-enable game start!~~
 - IDLE/BUSKING animations
+
+- Change when the lift status is checked ... not each time but once at the beginning of each round!
+- Tutorial section should be when lift hits top as before
+    - But rounds should last the full 4 seconds
+    - Change the colour of the drum lights to the colour of the correct drum for the duration
+- System hangs when connection to the scissor lift is broken!

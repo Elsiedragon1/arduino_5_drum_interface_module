@@ -494,6 +494,7 @@ void newRound()
     if ( tutorialSection )
     {
         // Do not change roundDuration ... leave at 4s!
+        checkTutorialSection();
     }
     else
     {
@@ -554,7 +555,6 @@ void updateGameState()
 {
     if ( currentTick - gameStateTick >= gameStateInterval )
     {
-        checkTutorialSection();
         if (currentTick - roundStartTick >= roundDuration)
         {
             //  Round timeout! You have lost!
