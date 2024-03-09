@@ -342,6 +342,8 @@ uint32_t resetAnimationInterval = 500; // This is the update frequency of the bl
 bool resetAnimationState = true;
 
 bool scissorResetStatusCheck = false;
+bool snakeHeadResetStatusCheck = false;
+bool snakeBodyResetStatusCheck = false;
 
 void initResetState()
 {   
@@ -360,12 +362,33 @@ void initResetState()
     }
 }
 
+bool checkResetStatus(uint8_t module)
+{
+    //  Make sure the Scissor lift has lowered!
+    uint8_t result = node.readHoldingRegisters(0,1,module);
+
+    if (result == 0)
+    {
+        if (node.getResponseBuffer(0x00) == 0)
+        {
+            return true;
+        }
+        else
+        {
+            return false;
+        }
+    }
+
+    return false;
+}
+
 void updateResetState()
 {   
     if (currentTick - resetStateTick >= resetStateDuration)
     {
         if (!enable_serial_debug)
         {
+            /*
             //  Make sure the Scissor lift has lowered!
             uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
 
@@ -382,18 +405,49 @@ void updateResetState()
                     uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);
                 }
             }
+            */
+            if (!scissorResetStatusCheck && checkResetStatus(SCISSOR))
+            {
+                scissorResetStatusCheck = true;
+            }
+            else
+            {
+                node.writeSingleRegister(0, LOWERED, SCISSOR);
+            }
+            
+            if (!snakeHeadResetStatusCheck && checkResetStatus(SNAKE_HEAD))
+            {
+                snakeHeadResetStatusCheck = true;
+            }
+            else
+            {
+                node.writeSingleRegister(0, 0, SNAKE_HEAD);
+            }
+
+            if (!snakeBodyResetStatusCheck && checkResetStatus(SNAKE_BODY))
+            {
+                snakeBodyResetStatusCheck = true;
+            }
+            else
+            {
+                node.writeSingleRegister(0, 0, SNAKE_BODY);
+            }
         }
         else
         {
             //  This enables automatic reset when testing the drum unit standalone
             scissorResetStatusCheck = true;
+            snakeHeadResetStatusCheck = true;
+            snakeBodyResetStatusCheck = true;
         }
 
-        if (scissorResetStatusCheck /* && snakeBodyResetStatusCheck etc ... */)
+        if (scissorResetStatusCheck && snakeHeadResetStatusCheck && snakeBodyResetStatusCheck)
         {
             //  All checks passed! Set to IDLE and reset checks for next time!
             mode = IDLE;
             scissorResetStatusCheck = false;
+            snakeHeadResetStatusCheck = false;
+            snakeBodyResetStatusCheck = false;
         }
     }
     else
@@ -760,6 +814,14 @@ void updateGameState()
                     node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
                     // Turn on Snakehead LEDs and mouth animations!
                     node.writeSingleRegister(0, 1, SNAKE_HEAD); // Animate!
+                }
+            }
+
+            if (tutorialSection == false)
+            {
+                if (!enable_serial_debug)
+                {
+                    node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
                 }
             }
 
