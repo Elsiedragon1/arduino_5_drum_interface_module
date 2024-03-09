@@ -1,17 +1,3 @@
-// Based on example code from here: (sent by Nick Shanks 26/3/22 to Paka; shared with Adam Feb'23)
-// https://www.digikey.co.uk/en/maker/blogs/2021/how-to-add-capacitive-sensing-to-any-arduino-project
-//
-// From CapacitiveSensor library example code comments + online docs:
-// https://playground.arduino.cc/Main/CapacitiveSensor/
-//
-// * Uses a high value resistor e.g. 10M between send pin and receive pin
-// * Resistor effects sensitivity, experiment with values, 50K - 50M. Larger resistor values yield larger sensor values.
-// * Receive pin is the sensor pin - try different amounts of foil/metal on this pin
-// [...]
-// Note that the hardware can be set up with one sPin and several resistors
-// and rPin's for calls to various capacitive sensors. See the example sketch.
-
-//#include <CapacitiveSensor.h>
 #include <Adafruit_NeoPixel.h>
 #include <Adafruit_MPR121.h>
 #include <Wire.h>
@@ -88,30 +74,8 @@ Adafruit_MPR121 drums = Adafruit_MPR121();
 #define _BV(bit) (1 << (bit)) 
 #endif
 
-//#define SEND_PIN 2
-//#define RECEIVE_D1_PIN 9
-//#define RECEIVE_D2_PIN 10
-//#define RECEIVE_D3_PIN 11
-//#define RECEIVE_D4_PIN 12
-
-//CapacitiveSensor drum[] = {
-//    CapacitiveSensor(SEND_PIN, RECEIVE_D1_PIN),
-//    CapacitiveSensor(SEND_PIN, RECEIVE_D2_PIN),
-//    CapacitiveSensor(SEND_PIN, RECEIVE_D3_PIN),
-//    CapacitiveSensor(SEND_PIN, RECEIVE_D4_PIN)
-//};
-
-//#define CAPACITANCE_SAMPLES 30 // (higher is better "resolution" but misses quick taps; see lib docs)
-
-//#define THRESHOLD_PERCENT_OF_MAX 20  // (Was 20 up until 03/02/2024)
-//#define INITIAL_ESTIMATED_MAX 500   // value depends on cap samples; stops false trigger before 1st tap
-
-//long maxCapacitance[NUM_DRUMS];
-
 //  Serial commnication for Modbus requires disabling the serial communication for
 //  debugging capacitative sensing and the drum gameplay.
-//  Set MODBUS_DISABLED to 1 stop Modbus communication and allow communication over
-//  USB
 const bool enable_serial_debug = true;
 const bool enable_drum_debug = true; // Requires enable serial debug to be true also!
 
@@ -136,8 +100,6 @@ uint32_t mode = IDLE;
 uint32_t lastMode = IDLE;
 
 // ============== MAIN task =======================================================
-// TODO Make the game non-blocking so that we can communicate with the modbus whilst
-// the game is in progress
 void setup()
 {
     if (enable_serial_debug)
@@ -195,10 +157,6 @@ void modbusSetup()
 }
 
 // ============== Lights task (everything left from old setup/loop) ===============
-// QUESTION: Instead of the game timing out repeatedly, if not being played, it could start a new level,
-// and maybe give a blast of the fire as a busking / attract feature.
-// QUESTION: The game increases the speed every correct touch. Should it really do that once every X touches,
-// to co-inside with the big blasts?
 void setupLights()
 {
     if (enable_serial_debug) Serial.println("Initializing NeoPixel rings...");
@@ -257,105 +215,11 @@ int8_t getTriggeredDrum()
     lastTouched = currentTouch;
     
     return -1;
-    /*
-    static long curCapacitance[NUM_DRUMS];
-
-    for (int d = 0; d < NUM_DRUMS; d++)
-    {
-        curCapacitance[d] = drum[d].capacitiveSensor(CAPACITANCE_SAMPLES);
-    }
-    if (enable_serial_debug)
-    {
-        if (enable_drum_debug)
-        {
-            // Print the result of the sensor readings
-            // Note that the capacitance value is an arbitrary number
-            // See: https://playground.arduino.cc/Main/CapacitiveSensor/ for details
-            for (int d = 0; d < NUM_DRUMS; d++)
-            {
-                Serial.print(curCapacitance[d]);
-                Serial.print(" ");
-            }
-            Serial.println("");
-        }
-    }
-
-    // Threshold detection
-    float bestThresholdFactor = 0;
-    int bestDrumId = -1;
-
-    for (int d = 0; d < NUM_DRUMS; d++)
-    {
-        if (curCapacitance[d] > maxCapacitance[d])
-        {
-            maxCapacitance[d] = curCapacitance[d];
-        }
-        float threshold = maxCapacitance[d] * THRESHOLD_PERCENT_OF_MAX / 100;
-        float thresholdFactor = curCapacitance[d] / threshold;
-        if (thresholdFactor > bestThresholdFactor)
-        {
-            bestThresholdFactor = thresholdFactor;
-            bestDrumId = d;
-        }
-        if(enable_serial_debug)
-        {
-            Serial.print(thresholdFactor);
-            Serial.print(" ");
-        }
-    }
-    if(enable_serial_debug) Serial.println();
-    
-    if (enable_serial_debug)
-    {
-        if (enable_drum_debug)
-        {
-            // Print the result of the sensor readings
-            // Note that the capacitance value is an arbitrary number
-            // See: https://playground.arduino.cc/Main/CapacitiveSensor/ for details
-            for (int d = 0; d < NUM_DRUMS; d++)
-            {
-                Serial.print(maxCapacitance[d]);
-                Serial.print(" ");
-            }
-            Serial.println("");
-        }
-    }
-
-    if (bestThresholdFactor > 1.1f) // 1.0f
-    {
-        if (bestDrumId != lastBestDrumId) // Protect against still holding the drum down!
-        {
-            lastBestDrumId = bestDrumId;
-            return bestDrumId;
-        }
-        else
-        {
-            lastBestDrumId = bestDrumId;
-            return -1;
-        }
-    }
-    else
-    {
-        if(enable_serial_debug) Serial.println("Lifted hand!");
-        lastBestDrumId = -1;
-        return -1;
-    }
-    */
 }
 
 // ============== Drums task ======================================================
 void setupDrums()
 {
-    // Trying a 5sec autocalibration of baseline
-    //if (enable_serial_debug) Serial.println("Autocalibrating drums...");
-    //for (int d = 0; d < NUM_DRUMS; d++)
-    //{
-    //    drum[d].set_CS_AutocaL_Millis(5000);
-    //    // drum[d].set_CS_AutocaL_Millis(0xFFFFFFFF); // Disable the automatic re-calibration feature
-    //    maxCapacitance[d] = INITIAL_ESTIMATED_MAX;
-    //}
-    //delay(5000);
-
     // Default address is 0x5A, if tied to 3.3V its 0x5B
     // If tied to SDA its 0x5C and if SCL then 0x5D
     if (!drums.begin(0x5A))
