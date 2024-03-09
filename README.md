@@ -35,4 +35,6 @@
     - ~~Change the colour of the drum lights to the colour of the correct drum for the duration~~
 - System hangs when connection to the scissor lift is broken! Add option to disable continuous checking?
 - Connection to scissor lift seems squiffy (Testing...) ~~Replace scissor-lift RS485 Board~~
-- Add in snake mouth and eye animations once the 
+- Reset RPi on key press
+- Stop RPi screen blanking
+- 
