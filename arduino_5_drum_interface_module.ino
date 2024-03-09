@@ -76,7 +76,7 @@ Adafruit_MPR121 drums = Adafruit_MPR121();
 
 //  Serial commnication for Modbus requires disabling the serial communication for
 //  debugging capacitative sensing and the drum gameplay.
-const bool enable_serial_debug = true;
+const bool enable_serial_debug = false;
 const bool enable_drum_debug = true; // Requires enable serial debug to be true also!
 
 // Declarations!
@@ -237,12 +237,12 @@ void setupDrums()
 void setupCoinAcceptor()
 {
     if (enable_serial_debug) Serial.println("Initializing coin acceptor...");
-    pinMode(A6, INPUT_PULLUP);
+    pinMode(A1, INPUT_PULLUP);
 }
 
 bool updateCoinAcceptor()
 {
-    return !digitalRead(A6);
+    return !digitalRead(A1);
 }
 
 //  ============= GAMESTATES ====================================================
