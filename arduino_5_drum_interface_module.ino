@@ -11,8 +11,10 @@
 // Note that the hardware can be set up with one sPin and several resistors
 // and rPin's for calls to various capacitive sensors. See the example sketch.
 
-#include <CapacitiveSensor.h>
+//#include <CapacitiveSensor.h>
 #include <Adafruit_NeoPixel.h>
+#include <Adafruit_MPR121.h>
+#include <Wire.h>
 
 //  Modbus Setup
 //  Modified library to allow for multiple slaves!
@@ -80,31 +82,37 @@ uint32_t black = Adafruit_NeoPixel::Color(0,0,0);
 
 #define NUM_DRUMS 4
 
-#define SEND_PIN 2
-#define RECEIVE_D1_PIN 9
-#define RECEIVE_D2_PIN 10
-#define RECEIVE_D3_PIN 11
-#define RECEIVE_D4_PIN 12
+Adafruit_MPR121 drums = Adafruit_MPR121();
 
-CapacitiveSensor drum[] = {
-    CapacitiveSensor(SEND_PIN, RECEIVE_D1_PIN),
-    CapacitiveSensor(SEND_PIN, RECEIVE_D2_PIN),
-    CapacitiveSensor(SEND_PIN, RECEIVE_D3_PIN),
-    CapacitiveSensor(SEND_PIN, RECEIVE_D4_PIN)
-};
+#ifndef _BV
+#define _BV(bit) (1 << (bit)) 
+#endif
 
-#define CAPACITANCE_SAMPLES 30 // (higher is better "resolution" but misses quick taps; see lib docs)
+//#define SEND_PIN 2
+//#define RECEIVE_D1_PIN 9
+//#define RECEIVE_D2_PIN 10
+//#define RECEIVE_D3_PIN 11
+//#define RECEIVE_D4_PIN 12
 
-#define THRESHOLD_PERCENT_OF_MAX 20  // (Was 20 up until 03/02/2024)
-#define INITIAL_ESTIMATED_MAX 500   // value depends on cap samples; stops false trigger before 1st tap
+//CapacitiveSensor drum[] = {
+//    CapacitiveSensor(SEND_PIN, RECEIVE_D1_PIN),
+//    CapacitiveSensor(SEND_PIN, RECEIVE_D2_PIN),
+//    CapacitiveSensor(SEND_PIN, RECEIVE_D3_PIN),
+//    CapacitiveSensor(SEND_PIN, RECEIVE_D4_PIN)
+//};
 
-long maxCapacitance[NUM_DRUMS];
+//#define CAPACITANCE_SAMPLES 30 // (higher is better "resolution" but misses quick taps; see lib docs)
+
+//#define THRESHOLD_PERCENT_OF_MAX 20  // (Was 20 up until 03/02/2024)
+//#define INITIAL_ESTIMATED_MAX 500   // value depends on cap samples; stops false trigger before 1st tap
+
+//long maxCapacitance[NUM_DRUMS];
 
 //  Serial commnication for Modbus requires disabling the serial communication for
 //  debugging capacitative sensing and the drum gameplay.
 //  Set MODBUS_DISABLED to 1 stop Modbus communication and allow communication over
 //  USB
-const bool enable_serial_debug = false;
+const bool enable_serial_debug = true;
 const bool enable_drum_debug = true; // Requires enable serial debug to be true also!
 
 // Declarations!
@@ -204,8 +212,52 @@ void setupLights()
 
 uint8_t lastBestDrumId = -1;
 
+uint16_t lastTouched = 0;
+uint16_t currentTouch = 0;
+
 int8_t getTriggeredDrum()
 {
+    currentTouch = drums.touched();
+
+    if (enable_serial_debug)
+    {
+        if (enable_drum_debug)
+        {
+            Serial.print("\t\t\t\t\t\t\t\t\t\t\t\t\t 0x"); Serial.println(drums.touched(), HEX);
+            Serial.print("Filt: ");
+            for (uint8_t i = 0; i < 12; i++)
+            {
+                Serial.print(drums.filteredData(i)); Serial.print("\t");
+            }
+            Serial.println();
+            Serial.print("Base: ");
+            for (uint8_t i = 0; i < 12; i++)
+            {
+                Serial.print(drums.baselineData(i)); Serial.print("\t");
+            }
+            Serial.println();
+        }
+    }
+
+    for (uint8_t i = 0; i < 12; i++)
+    {
+        // it if *is* touched and *wasnt* touched before, alert!
+        if ((currentTouch & _BV(i)) && !(lastTouched & _BV(i)) )
+        {
+            if (enable_serial_debug) Serial.print(i/2); Serial.println(" touched");
+            return i/2;
+        }
+        // if it *was* touched and now *isnt*, alert!
+        //if (!(currentTouch & _BV(i)) && (lastTouched & _BV(i)) )
+        //{
+        //    Serial.print(i); Serial.println(" released");
+        //}
+    }
+
+    lastTouched = currentTouch;
+    
+    return -1;
+    /*
     static long curCapacitance[NUM_DRUMS];
 
     for (int d = 0; d < NUM_DRUMS; d++)
@@ -288,22 +340,32 @@ int8_t getTriggeredDrum()
         lastBestDrumId = -1;
         return -1;
     }
+    */
 }
 
 // ============== Drums task ======================================================
 void setupDrums()
 {
     // Trying a 5sec autocalibration of baseline
-    if (enable_serial_debug) Serial.println("Autocalibrating drums...");
-    for (int d = 0; d < NUM_DRUMS; d++)
-    {
-        drum[d].set_CS_AutocaL_Millis(5000);
-        // drum[d].set_CS_AutocaL_Millis(0xFFFFFFFF); // Disable the automatic re-calibration feature
-        maxCapacitance[d] = INITIAL_ESTIMATED_MAX;
-    }
-    delay(5000);
+    //if (enable_serial_debug) Serial.println("Autocalibrating drums...");
+    //for (int d = 0; d < NUM_DRUMS; d++)
+    //{
+    //    drum[d].set_CS_AutocaL_Millis(5000);
+    //    // drum[d].set_CS_AutocaL_Millis(0xFFFFFFFF); // Disable the automatic re-calibration feature
+    //    maxCapacitance[d] = INITIAL_ESTIMATED_MAX;
+    //}
+    //delay(5000);
 
-    if (enable_serial_debug) Serial.println("Beginning game!");
+    // Default address is 0x5A, if tied to 3.3V its 0x5B
+    // If tied to SDA its 0x5C and if SCL then 0x5D
+    if (!drums.begin(0x5A))
+    {
+        if (enable_serial_debug) Serial.println("MPR121 not found, check wiring?");
+        while (1) {
+          Serial.println(".");
+        };
+    }
+    if (enable_serial_debug) Serial.println("MPR121 Initialised!");
 }
 
 // ============== COIN ACCEPTOR =================================================
@@ -311,12 +373,12 @@ void setupDrums()
 void setupCoinAcceptor()
 {
     if (enable_serial_debug) Serial.println("Initializing coin acceptor...");
-    pinMode(A5, INPUT_PULLUP);
+    pinMode(A6, INPUT_PULLUP);
 }
 
 bool updateCoinAcceptor()
 {
-    return !digitalRead(A5);
+    return !digitalRead(A6);
 }
 
 //  ============= GAMESTATES ====================================================
