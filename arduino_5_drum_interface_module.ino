@@ -285,6 +285,8 @@ bool tutorialSection = true;
 //  ============= RESET STATE ===================================================
 uint32_t resetStateTick = 0;
 uint32_t resetStateDuration = 4000;
+uint32_t resetStateLastTick = 0;
+uint32_t resetStateInterval = 200;
 uint32_t resetAnimationTick = 0;
 uint32_t resetAnimationInterval = 500; // This is the update frequency of the black and white colours
 
@@ -307,7 +309,7 @@ void initResetState()
         node.writeSingleRegister(0, 0, SNAKE_HEAD);
         // Make sure there is enough time to update all the score / mode information
         delay(60);
-        uint8_t result = node.writeSingleRegister(0, score, RPI);
+        node.writeSingleRegister(0, score, RPI);
     }
 }
 
@@ -335,68 +337,82 @@ void updateResetState()
 {   
     if (currentTick - resetStateTick >= resetStateDuration)
     {
-        if (!enable_serial_debug)
+        if (currentTick - resetStateLastTick >= resetStateInterval)
         {
-            /*
-            //  Make sure the Scissor lift has lowered!
-            uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
-
-            if (result == 0)
+            if (!enable_serial_debug)
             {
-                if (node.getResponseBuffer(0x00) == 0)
+                /*
+                //  Make sure the Scissor lift has lowered!
+                uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
+
+                if (result == 0)
                 {
-                    //  The scissor lift has been lowered!
-                    scissorResetStatusCheck = true;
+                    if (node.getResponseBuffer(0x00) == 0)
+                    {
+                        //  The scissor lift has been lowered!
+                        scissorResetStatusCheck = true;
+                    }
+                    else
+                    {
+                        //  If it returns a state of anything other than lowered, it will request again to lower the scissor list
+                        uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);
+                    }
                 }
-                else
+                */
+
+                if (!snakeBodyResetStatusCheck)
                 {
-                    //  If it returns a state of anything other than lowered, it will request again to lower the scissor list
-                    uint8_t result = node.writeSingleRegister(0, LOWERED, SCISSOR);
+                    if (checkResetStatus(SNAKE_BODY))
+                    {
+                        snakeBodyResetStatusCheck = true;
+                    }
+                    else
+                    {
+                        node.writeSingleRegister(0, 0, SNAKE_BODY);
+                    }
+                }
+
+                if (!snakeHeadResetStatusCheck)
+                {
+                    if (checkResetStatus(SNAKE_HEAD))
+                    {
+                        snakeHeadResetStatusCheck = true;
+                    }
+                    else
+                    {
+                        node.writeSingleRegister(0, 0, SNAKE_HEAD);
+                    }
+                }
+
+                if (!scissorResetStatusCheck)
+                {
+                    if (checkResetStatus(SCISSOR))
+                    {
+                        scissorResetStatusCheck = true;
+                    }
+                    else
+                    {
+                        node.writeSingleRegister(0, LOWERED, SCISSOR);
+                    }
                 }
             }
-            */
-            if (!scissorResetStatusCheck && checkResetStatus(SCISSOR))
+            else
             {
+                //  This enables automatic reset when testing the drum unit standalone
                 scissorResetStatusCheck = true;
-            }
-            else
-            {
-                node.writeSingleRegister(0, LOWERED, SCISSOR);
-            }
-            
-            if (!snakeHeadResetStatusCheck && checkResetStatus(SNAKE_HEAD))
-            {
                 snakeHeadResetStatusCheck = true;
-            }
-            else
-            {
-                node.writeSingleRegister(0, 0, SNAKE_HEAD);
-            }
-
-            if (!snakeBodyResetStatusCheck && checkResetStatus(SNAKE_BODY))
-            {
                 snakeBodyResetStatusCheck = true;
             }
-            else
-            {
-                node.writeSingleRegister(0, 0, SNAKE_BODY);
-            }
-        }
-        else
-        {
-            //  This enables automatic reset when testing the drum unit standalone
-            scissorResetStatusCheck = true;
-            snakeHeadResetStatusCheck = true;
-            snakeBodyResetStatusCheck = true;
-        }
 
-        if (scissorResetStatusCheck && snakeHeadResetStatusCheck && snakeBodyResetStatusCheck)
-        {
-            //  All checks passed! Set to IDLE and reset checks for next time!
-            mode = IDLE;
-            scissorResetStatusCheck = false;
-            snakeHeadResetStatusCheck = false;
-            snakeBodyResetStatusCheck = false;
+            if (scissorResetStatusCheck && snakeHeadResetStatusCheck && snakeBodyResetStatusCheck)
+            {
+                //  All checks passed! Set to IDLE and reset checks for next time!
+                mode = IDLE;
+                scissorResetStatusCheck = false;
+                snakeHeadResetStatusCheck = false;
+                snakeBodyResetStatusCheck = false;
+            }
+            resetStateLastTick = currentTick;
         }
     }
     else
@@ -813,7 +829,9 @@ void updateIdleState()
             credits = credits - 1;
             if (!enable_serial_debug)
             {
+                delay(20);
                 node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
+                delay(20);
             }
             mode = GAME;
         }
