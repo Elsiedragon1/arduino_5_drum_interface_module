@@ -233,6 +233,7 @@ void setupDrums()
 }
 
 // ============== COIN ACCEPTOR =================================================
+uint8_t credits = 0;
 
 void setupCoinAcceptor()
 {
@@ -240,9 +241,31 @@ void setupCoinAcceptor()
     pinMode(A1, INPUT_PULLUP);
 }
 
-bool updateCoinAcceptor()
+uint32_t coinInterval = 50;
+uint32_t lastCoinTick = 0;
+
+bool doubleCountGuard = false;
+
+void updateCoinAcceptor()
 {
-    return !digitalRead(A1);
+    if (currentTick - lastCoinTick > coinInterval)
+    {
+        if (!digitalRead(A1) && doubleCountGuard == false)
+        {
+            credits = credits + 1;
+            doubleCountGuard = true;
+
+            if (!enable_serial_debug)
+            {
+                node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
+            }
+        }
+        else
+        {
+          doubleCountGuard = false;
+        }
+        lastCoinTick = currentTick;
+    }
 }
 
 //  ============= GAMESTATES ====================================================
@@ -784,9 +807,14 @@ void updateIdleState()
         //  Starts a new game automatically
         //  mode = GAME;
 
-        //  Check if the start button is pressed!
-        if (updateCoinAcceptor())
+        //  TODO: Add to see if the start button is pressed!
+        if (credits > 0)
         {
+            credits = credits - 1;
+            if (!enable_serial_debug)
+            {
+                node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
+            }
             mode = GAME;
         }
     }
@@ -796,6 +824,9 @@ void updateIdleState()
 
 void updateGame()
 {
+
+    updateCoinAcceptor();
+
     if ( mode != lastMode )
     {        
         // Initialise next mode

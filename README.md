@@ -21,13 +21,19 @@
         -   ~~40 &rArr; COIL 1 2 4 5~~
         -   ~~45+ &rArr; COIL 1 2 3 4 5~~
         -   HIGHSCORE SNAKEBODY wiggle and excited blasting!
-- On failure!
-    - Reset SCISSOR
-    - Reset SNAKEHEADS
-    - Reset SNAKEBODYS
+- ~~On failure!~~
+    - ~~Reset SCISSOR~~
+    - ~~Reset SNAKEHEADS~~
+    - ~~Reset SNAKEBODYS~~
 - ~~On reset!~~
     - ~~Re-enable game start!~~
 - IDLE/BUSKING animations
+- ~~Prevent machine from eating your coin ... Add credits ...~~
+- No mouths opening once the tutorial mode has been finished
+- Flame chase on snake heads 1, 2, 3, 4
+- Harden RPi
+- A way of easily killing / restarting the node server
+- Seperate out debug into a different page
 
 - ~~Change when the lift status is checked ... not each time but once at the beginning of each round!~~
 - ~~Tutorial section should be when lift hits top as before~~
@@ -35,6 +41,5 @@
     - ~~Change the colour of the drum lights to the colour of the correct drum for the duration~~
 - System hangs when connection to the scissor lift is broken! Add option to disable continuous checking?
 - Connection to scissor lift seems squiffy (Testing...) ~~Replace scissor-lift RS485 Board~~
-- Reset RPi on key press
-- Stop RPi screen blanking
-- 
+- Reset / Shutdown RPi on key press
+- ~~Stop RPi screen blanking~~
