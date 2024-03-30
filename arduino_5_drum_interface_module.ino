@@ -310,6 +310,9 @@ void initResetState()
         // Make sure there is enough time to update all the score / mode information
         delay(60);
         node.writeSingleRegister(0, score, RPI);
+        delay(20);
+        node.writeSingleRegister(1, FAIL, RPI);
+        delay(20);
     }
 }
 
@@ -552,6 +555,9 @@ void initGameState()
     hardScore = 0;
     tutorialSection = true;
     if (enable_serial_debug) Serial.println("INIT GAME STATE");
+    delay(20);
+    node.writeSingleRegister(1, GAME, RPI);
+    delay(20);
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
     newRound();
 }
@@ -814,6 +820,9 @@ void initIdleState()
 {
     if (enable_serial_debug) Serial.println("INIT IDLE STATE");
     initStartTick = currentTick;
+    delay(20);
+    node.writeSingleRegister(1, IDLE, RPI);
+    delay(20);
 }
 
 void updateIdleState()
