@@ -695,10 +695,41 @@ void updateGameState()
 
                             uint8_t multiple = hardScore / bigFlameScore;
 
+//  REWARDS SECTION!
                             if (hardScore % bigFlameScore == 0 )
                             {
                                 switch (multiple)
                                 {
+                                case 2:
+                                    node.writeSingleCoil(6,1,SAXAPHONES);
+                                    break;
+                                case 4:
+                                    node.writeSingleCoil(7,1,SAXAPHONES);
+                                    break;
+                                case 5:
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    break;
+                                case 6:
+                                    node.writeSingleCoil(6,1,SAXAPHONES);
+                                    node.writeSingleCoil(7,1,SAXAPHONES);
+                                    break;
+                                case 7:
+                                    node.writeSingleCoil(9,1,SAXAPHONES);
+                                    break;
+                                case 8:
+                                    node.writeSingleCoil(5,1,SAXAPHONES);
+                                    node.writeSingleCoil(6,1,SAXAPHONES);
+                                    node.writeSingleCoil(7,1,SAXAPHONES);
+                                    break;
+                                case 9:
+                                    node.writeSingleCoil(10,1,SAXAPHONES);
+                                    break;
+                                case 10:
+                                    node.writeSingleCoil(11,1,SAXAPHONES);
+                                    break;
+                                default:
+                                    node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
+                                    /*
                                 case 0:
                                     node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
                                     break;
@@ -745,6 +776,7 @@ void updateGameState()
                                     node.writeSingleCoil(4,1,SAXAPHONES);
                                     node.writeSingleCoil(5,1,SAXAPHONES);
                                     break;
+                                    */
                                 }
                             }
                             else
@@ -793,6 +825,8 @@ void updateGameState()
                 if (!enable_serial_debug)
                 {
                     node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
+                    // Stop snake mouths from  opening!
+                    node.writeSingleRegister(2, 2, SNAKE_HEAD);
                 }
             }
 
