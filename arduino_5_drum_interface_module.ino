@@ -222,7 +222,7 @@ void setupDrums()
 {
     // Default address is 0x5A, if tied to 3.3V its 0x5B
     // If tied to SDA its 0x5C and if SCL then 0x5D
-    if (!drums.begin(0x5A))
+    if (!drums.begin(0x5A, &Wire ,14, 6)) // ADDRESS, WIRE, TOUCH (Default 12), RELEASE (DEFAULT 6)
     {
         if (enable_serial_debug) Serial.println("MPR121 not found, check wiring?");
         while (1) {
