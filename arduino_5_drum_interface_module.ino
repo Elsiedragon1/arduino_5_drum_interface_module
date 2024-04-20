@@ -674,14 +674,7 @@ void updateGameState()
 
                                 if (!enable_serial_debug)
                                 {
-                                    if (score % bigFlameScore == 0 )
-                                    {
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                    }
-                                    else
-                                    {
-                                        node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
-                                    }
+                                    node.writeSingleCoil(triggeredDrum+1,1,SAXAPHONES);
                                 }
                             }
                         }
@@ -721,7 +714,6 @@ void updateGameState()
                                 hardScore += 1; // Also add score to hard score section!
 
                                 uint8_t multiple = hardScore / bigFlameScore;
-
     //  REWARDS SECTION!
                                 if (hardScore % bigFlameScore == 0 )
                                 {
