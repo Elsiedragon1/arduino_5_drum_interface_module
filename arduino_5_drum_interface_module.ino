@@ -203,7 +203,11 @@ int8_t getTriggeredDrum()
         // it if *is* touched and *wasnt* touched before, alert!
         if ((currentTouch & _BV(i)) && !(lastTouched & _BV(i)) )
         {
-            if (enable_serial_debug) Serial.print(i/2); Serial.println(" touched");
+            if (enable_serial_debug)
+            {
+                Serial.print(i/2);
+                Serial.println(" touched");
+            }
             return i/2;
         }
         // if it *was* touched and now *isnt*, alert!
