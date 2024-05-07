@@ -203,7 +203,11 @@ int8_t getTriggeredDrum()
         // it if *is* touched and *wasnt* touched before, alert!
         if ((currentTouch & _BV(i)) && !(lastTouched & _BV(i)) )
         {
-            if (enable_serial_debug) Serial.print(i/2); Serial.println(" touched");
+            if (enable_serial_debug)
+            {
+                Serial.print(i/2);
+                Serial.println(" touched");
+            }
             return i/2;
         }
         // if it *was* touched and now *isnt*, alert!
@@ -260,6 +264,10 @@ void updateCoinAcceptor()
             {
                 node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
             }
+            else
+            {
+              Serial.println("Credit!");
+            }
         }
         else
         {
@@ -297,11 +305,21 @@ bool scissorResetStatusCheck = false;
 bool snakeHeadResetStatusCheck = false;
 bool snakeBodyResetStatusCheck = false;
 
+uint8_t timeoutCount[7] = { 0 };
+
+uint8_t maxTimeouts = 10;
+
+bool scissorLiftOverride = false;
+bool snakeBodyOverride = false;
+
 void initResetState()
 {   
     if (enable_serial_debug) Serial.println("INIT RESET STATE");
     resetStateTick = currentTick;
     resetAnimationState = true;
+
+    //  Reset scissorlift and snakebody timeouts at the beginning of the reset state to retry after each game!
+    resetTimeouts();
 
     //  Start the process of resetting the scissor lift and snake bodies etc ...
     if (!enable_serial_debug)
@@ -324,6 +342,8 @@ bool checkResetStatus(uint8_t module)
 
     if (result == 0)
     {
+        timeoutCount[module] = 0;
+
         if (node.getResponseBuffer(0x00) == 0)
         {
             return true;
@@ -333,8 +353,46 @@ bool checkResetStatus(uint8_t module)
             return false;
         }
     }
+    else
+    {
+        if (result == 0xE2)
+        {
+            timeoutCount[module] = timeoutCount[module] + 1;
+        }
+    }
 
     return false;
+}
+
+bool checkTimeouts()
+{
+    // Scissor lift
+    if (timeoutCount[SCISSOR] > maxTimeouts)
+    {
+        scissorLiftOverride = true;
+    }
+    else
+    {
+        scissorLiftOverride = false;
+    }
+
+    // Snake bodies!
+    if (timeoutCount[SNAKE_BODY] > maxTimeouts)
+    {
+        snakeBodyOverride = true;
+    }
+    else
+        {
+        snakeBodyOverride = false;
+    }
+}
+
+void resetTimeouts()
+{
+    for( uint8_t c = 0; c < 7; c++ )
+    {
+        timeoutCount[c] = 0;
+    }
 }
 
 void updateResetState()
@@ -364,15 +422,25 @@ void updateResetState()
                 }
                 */
 
+                checkTimeouts();
+
+                //  Try to reset the snakehead, snakebody and scissorlift
                 if (!snakeBodyResetStatusCheck)
                 {
-                    if (checkResetStatus(SNAKE_BODY))
+                    if (snakeBodyOverride)
                     {
                         snakeBodyResetStatusCheck = true;
                     }
                     else
                     {
-                        node.writeSingleRegister(0, 0, SNAKE_BODY);
+                        if (checkResetStatus(SNAKE_BODY))
+                        {
+                            snakeBodyResetStatusCheck = true;
+                        }
+                        else
+                        {
+                            node.writeSingleRegister(0, 0, SNAKE_BODY);
+                        }
                     }
                 }
 
@@ -390,13 +458,20 @@ void updateResetState()
 
                 if (!scissorResetStatusCheck)
                 {
-                    if (checkResetStatus(SCISSOR))
+                    if (scissorLiftOverride)
                     {
                         scissorResetStatusCheck = true;
                     }
-                    else
+                    else 
                     {
-                        node.writeSingleRegister(0, LOWERED, SCISSOR);
+                        if (checkResetStatus(SCISSOR))
+                        {
+                            scissorResetStatusCheck = true;
+                        }
+                        else
+                        {
+                            node.writeSingleRegister(0, LOWERED, SCISSOR);
+                        }
                     }
                 }
             }
@@ -408,7 +483,8 @@ void updateResetState()
                 snakeBodyResetStatusCheck = true;
             }
 
-            if (scissorResetStatusCheck && snakeHeadResetStatusCheck && snakeBodyResetStatusCheck)
+            // For now, do not require snakehead to be reset!
+            if (scissorResetStatusCheck && /*snakeHeadResetStatusCheck &&*/ snakeBodyResetStatusCheck)
             {
                 //  All checks passed! Set to IDLE and reset checks for next time!
                 mode = IDLE;
@@ -469,7 +545,7 @@ uint32_t roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;  // In milliseconds
 uint32_t roundStartTick = 0;
 
 // For debugging on  my stripped down system!
-bool ledCountdown = true;
+bool ledCountdown = false;
 
 // Updates all the lights to their corresponding colours!
 void updateAllLights()
@@ -555,49 +631,104 @@ void newRound()
     roundStartTick = currentTick;
 }
 
+bool initTutorialTimer = false;
+uint32_t startTimer = 0;
+uint32_t timerDuration = 40000;
+
 void initGameState()
 {
     score = 0;
     tutorialScore = 0;
     hardScore = 0;
     tutorialSection = true;
-    if (enable_serial_debug) Serial.println("INIT GAME STATE");
-    delay(20);
-    node.writeSingleRegister(1, GAME, RPI);
-    delay(20);
+    initTutorialTimer = false;
+    if (enable_serial_debug)
+    {
+        Serial.println("INIT GAME STATE");
+    }
+    else
+    {
+        delay(50);
+        node.writeSingleRegister(1, GAME, RPI);
+        delay(20);
+    }
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
     newRound();
 }
 
-uint8_t checkTutorialSection()
+void checkTutorialSection()
 {
     if (tutorialSection)
     {
         if (!enable_serial_debug)
         {
-            //  The tutorial section is when the lift is still rising!
-            uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
-
-            if (result == 0)
+            if (!scissorLiftOverride)
             {
-                if (node.getResponseBuffer(0x00) == RISEN)
+                //  The tutorial section is when the lift is still rising!
+                uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
+
+                if (result == 0)
                 {
-                    //  The scissor lift has risen!
-                    tutorialSection = false;
-                    tutorialScore = score;
-                    hardScore = 0;
-                    //  Fire SAXAPHONE 5! Boom!
-                    node.writeSingleCoil(5, 1, SAXAPHONES);
-                    waitingRound = true;
-                    delay(50);
-                    node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
-                    delay(50);
+                    if (node.getResponseBuffer(0x00) == RISEN)
+                    {
+                        //  The scissor lift has risen!
+                        tutorialSection = false;
+                        tutorialScore = score;
+                        hardScore = 0;
+                        //  Fire SAXAPHONE 5! Boom!
+                        node.writeSingleCoil(5, 1, SAXAPHONES);
+                        waitingRound = true;
+                        delay(50);
+                        node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
+                        delay(50);
+                    }
+                }
+            }
+            else
+            {
+              //  This is a fallback for the serial debug state ... or if the scissorlift has failed and is no longer responding
+                if (initTutorialTimer == false)
+                {
+                    initTutorialTimer = true;
+                    startTimer = currentTick;
+                }
+                else
+                {
+                    if (currentTick - startTimer > timerDuration)
+                    {
+                        tutorialSection = false;
+                        tutorialScore = score;
+                        hardScore = 0;
+                        node.writeSingleCoil(5, 1, SAXAPHONES);
+                        waitingRound = true;
+                        delay(50);
+                        node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
+                        delay(50);
+
+                        initTutorialTimer = false;
+                    }
                 }
             }
         }
         else
         {
-            //  For debugging purposes we don't need to worry about the tutorial section!
+            //  This is a fallback for the serial debug state ... or if the scissorlift has failed and is no longer responding
+            if (initTutorialTimer == false)
+            {
+                initTutorialTimer = true;
+                startTimer = currentTick;
+            }
+            else
+            {
+                if (currentTick - startTimer > timerDuration)
+                {
+                    tutorialSection = false;
+                    tutorialScore = score;
+                    hardScore = 0;
+                    waitingRound = true;
+                    initTutorialTimer = false;
+                }
+            }
         }
     }
 }
@@ -834,7 +965,10 @@ void updateGameState()
                 //  While in the tutorial section and the score is rising keep sending raise messages
                 if (!enable_serial_debug)
                 {
-                    node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                    if (!scissorLiftOverride)
+                    {
+                        node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                    }
                     // Turn on Snakehead LEDs and mouth animations!
                     node.writeSingleRegister(0, 1, SNAKE_HEAD); // Animate!
                 }
@@ -844,7 +978,10 @@ void updateGameState()
             {
                 if (!enable_serial_debug)
                 {
-                    node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
+                    if (!snakeBodyOverride)
+                    {
+                        node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
+                    }
                     // Stop snake mouths from  opening!
                     node.writeSingleRegister(2, 2, SNAKE_HEAD);
                 }
@@ -870,11 +1007,17 @@ uint32_t initStateInterval = 1000/30;
 
 void initIdleState()
 {
-    if (enable_serial_debug) Serial.println("INIT IDLE STATE");
     initStartTick = currentTick;
-    delay(50);
-    node.writeSingleRegister(1, IDLE, RPI);
-    delay(50);
+    if (enable_serial_debug)
+    {
+      Serial.println("INIT IDLE STATE");
+    }
+    else
+    {
+      delay(50);
+      node.writeSingleRegister(1, IDLE, RPI);
+      delay(50);
+    }
 }
 
 void updateIdleState()
