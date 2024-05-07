@@ -545,7 +545,7 @@ uint32_t roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;  // In milliseconds
 uint32_t roundStartTick = 0;
 
 // For debugging on  my stripped down system!
-bool ledCountdown = false;
+bool ledCountdown = true;
 
 // Updates all the lights to their corresponding colours!
 void updateAllLights()
