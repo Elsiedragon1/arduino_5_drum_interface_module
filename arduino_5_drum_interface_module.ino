@@ -9,9 +9,6 @@
 
 //  VARIABLES THAT CAN BE EASILY CHANGED HERE!  ///////////////////////////////////////////////////
 
-// Delay before and after talking to the RPI. Higher numbers improve the RPI communications significantly. But slow down responsiveness.
-#define RPI_TRANSMISSION_DELAY 30
-
 // Value between 0 and 255
 // Note: 255 is blindingly bright!
 #define LED_BRIGHTNESS 30
@@ -28,6 +25,7 @@ uint32_t colourPreset[] = {
 //  Game variables
 //  The initial duration of the game in milliseconds, and the duration during the tutorial section.
 #define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
+
 //  The mutliplier applied to each new round.
 //  The closer to 1.00 the longer the game will last.
 //  The lower the faster it will get really hard.
@@ -36,12 +34,12 @@ float roundTimeMultiplier = 0.95;
 uint16_t minimumRoundTime = 300;
 
 //  If the game isn't able to communicate with the scissor lift this is how long the tutorial section will last in milliseconds
-uint32_t timerDuration = 20000; 
+uint32_t timerDuration = 20000;
 
 //  Attract mode timings! All in milliseconds
 
-//  The duration of time before ANY attract occurs
-uint32_t initialAttractInterval = 5*60000;
+//  The duration of time before ANY saxaphone attract occurs
+uint32_t initialAttractInterval = 5*60*1000;
 
 //  The minimum and maximum time between attracts
 uint32_t minAttractInterval = 4*60000;
@@ -51,10 +49,14 @@ uint32_t maxAttractInterval = 6*60000;
 uint32_t LEDAttractInterval = 3000;
 
 //  Reset delay after a game. This is the amount of time the leds will blink on and off AND the delay before the fail blast
+//  Comment out line 452 to disable
 uint32_t resetDelay = 6000;
 
 //  Delay between changing the snake head attract mode
 uint32_t snakeAttractInterval = 30000;
+
+// Delay before and after talking to the RPI. Higher numbers improve the RPI communications significantly. But slow down responsiveness.
+#define RPI_TRANSMISSION_DELAY 30
 
 ////////////////////////////////////////////////////////////////////////////////////////
 
@@ -446,7 +448,9 @@ void updateResetState()
             {
                 if (!failChaseDone)
                 {
+                    //  FAIL CHASE SEQUENCE
                     node.writeSingleCoil(11,1,SAXAPHONES); // All-chase
+                    // node.writeSingleCoil(10,1,SAXAPHONES); // Instrument Chase
                     failChaseDone = true;
                 }
 
