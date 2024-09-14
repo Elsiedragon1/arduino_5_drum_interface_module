@@ -1061,10 +1061,11 @@ void updateIdleState()
             credits = credits - 1;
             if (!enable_serial_debug)
             {
-                node.writeSingleRegister(0,0,SNAKE_HEAD);   //  Reset snake head!
+                
                 delay(RPI_TRANSMISSION_DELAY); // 20
                 node.writeSingleRegister(2, credits, RPI);
                 delay(RPI_TRANSMISSION_DELAY); // 20
+                node.writeSingleRegister(0,0,SNAKE_BODY);
             }
             mode = GAME;
         }
@@ -1164,6 +1165,14 @@ void updateIdleState()
                             snakeAttractState = 3;
                             break;
                         case 3:
+                            node.writeSingleRegister(0,3,SNAKE_BODY);   // Animate mouths
+                            snakeAttractState = 4;
+                            break;
+                        case 4:
+                            node.writeSingleRegister(0,0,SNAKE_BODY);   // Close mouths
+                            snakeAttractState = 5;
+                            break;
+                        case 5:
                             node.writeSingleRegister(1,2,SNAKE_HEAD);   // Pulsing Eyes off!
                             snakeAttractState = 0;
                             break;
