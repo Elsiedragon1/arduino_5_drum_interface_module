@@ -6,6 +6,58 @@
 //  Modified library to allow for multiple slaves!
 #include <ModbusMaster.h>
 
+
+//  VARIABLES THAT CAN BE EASILY CHANGED HERE!  ///////////////////////////////////////////////////
+
+// Delay before and after talking to the RPI. Higher numbers improve the RPI communications significantly. But slow down responsiveness.
+#define RPI_TRANSMISSION_DELAY 30
+
+// Value between 0 and 255
+// Note: 255 is blindingly bright!
+#define LED_BRIGHTNESS 30
+
+//  Colours used for the targets. Don't change the number of them, only their values.
+//  All values are between 0 and 255. and Correspond to R, G, B in that order.
+uint32_t colourPreset[] = {
+    Adafruit_NeoPixel::Color(0,   0, 255),   //blue
+    Adafruit_NeoPixel::Color(0,   255, 0),   //green
+    Adafruit_NeoPixel::Color(255, 0,   0),   //red
+    Adafruit_NeoPixel::Color(255, 255, 0)    //yellow
+};
+
+//  Game variables
+//  The initial duration of the game in milliseconds, and the duration during the tutorial section.
+#define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
+//  The mutliplier applied to each new round.
+//  The closer to 1.00 the longer the game will last.
+//  The lower the faster it will get really hard.
+float roundTimeMultiplier = 0.95;
+//  The fastest a round can be in milliseconds
+uint16_t minimumRoundTime = 300;
+
+//  If the game isn't able to communicate with the scissor lift this is how long the tutorial section will last in milliseconds
+uint32_t timerDuration = 20000; 
+
+//  Attract mode timings! All in milliseconds
+
+//  The duration of time before ANY attract occurs
+uint32_t initialAttractInterval = 5*60000;
+
+//  The minimum and maximum time between attracts
+uint32_t minAttractInterval = 4*60000;
+uint32_t maxAttractInterval = 6*60000;
+
+//  IDLE LED light colour change time
+uint32_t LEDAttractInterval = 3000;
+
+//  Reset delay after a game. This is the amount of time the leds will blink on and off AND the delay before the fail blast
+uint32_t resetDelay = 6000;
+
+//  Delay between changing the snake head attract mode
+uint32_t snakeAttractInterval = 30000;
+
+////////////////////////////////////////////////////////////////////////////////////////
+
 const uint16_t id = 5;
 
 const uint32_t baud = 115200;
@@ -55,13 +107,6 @@ Adafruit_NeoPixel ring[] = {
 };
 
 #define NUM_COLOUR_PRESETS 4
-
-uint32_t colourPreset[] = {
-    Adafruit_NeoPixel::Color(0,   0, 255),   //blue
-    Adafruit_NeoPixel::Color(0,   255, 0),   //green
-    Adafruit_NeoPixel::Color(255, 0,   0),   //red
-    Adafruit_NeoPixel::Color(255, 255, 0),   //yellow
-};
 
 uint32_t white = Adafruit_NeoPixel::Color(255,255,255);
 uint32_t black = Adafruit_NeoPixel::Color(0,0,0);
@@ -164,7 +209,7 @@ void setupLights()
     for (int r = 0; r < NUM_RINGS; r++)
     {
         ring[r].begin();
-        ring[r].setBrightness(30); //adjust brightness here
+        ring[r].setBrightness(LED_BRIGHTNESS); //adjust brightness here
         ring[r].show(); // Initialize all pixels to 'off'
     }
 }
@@ -264,6 +309,10 @@ void updateCoinAcceptor()
             {
                 node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
             }
+            else
+            {
+              Serial.println("Credit!");
+            }
         }
         else
         {
@@ -276,9 +325,6 @@ void updateCoinAcceptor()
 //  ============= GAMESTATES ====================================================
 
 //  ============= GAME VARIABLES ================================================
-#define GAME_ROUND_INITIAL_TIMEOUT_MS 4000
-float roundTimeMultiplier = 0.95;
-uint16_t minimumRoundTime = 300;
 uint16_t score = 0;
 uint16_t tutorialScore = 0;
 uint16_t hardScore = 0;
@@ -289,7 +335,7 @@ bool tutorialSection = true;
 
 //  ============= RESET STATE ===================================================
 uint32_t resetStateTick = 0;
-uint32_t resetStateDuration = 4000;
+uint32_t resetStateDuration = resetDelay;
 uint32_t resetStateLastTick = 0;
 uint32_t resetStateInterval = 200;
 uint32_t resetAnimationTick = 0;
@@ -300,6 +346,13 @@ bool resetAnimationState = true;
 bool scissorResetStatusCheck = false;
 bool snakeHeadResetStatusCheck = false;
 bool snakeBodyResetStatusCheck = false;
+
+uint8_t timeoutCount[7] = { 0 };
+
+uint8_t maxTimeouts = 10;
+
+bool scissorLiftOverride = false;
+bool snakeBodyOverride = false;
 
 void initResetState()
 {   
@@ -313,11 +366,13 @@ void initResetState()
         node.writeSingleRegister(0, LOWERED, SCISSOR);  //  LOWER scissor lift!
         node.writeSingleRegister(0, 0, SNAKE_HEAD);
         // Make sure there is enough time to update all the score / mode information
-        delay(60);
+        delay(RPI_TRANSMISSION_DELAY); //60
         node.writeSingleRegister(0, score, RPI);
-        delay(20);
+        delay(RPI_TRANSMISSION_DELAY); //20
+        node.writeSingleRegister(2, credits, RPI);
+        delay(RPI_TRANSMISSION_DELAY); //20
         node.writeSingleRegister(1, FAIL, RPI);
-        delay(20);
+        delay(RPI_TRANSMISSION_DELAY); //20
     }
 }
 
@@ -337,9 +392,49 @@ bool checkResetStatus(uint8_t module)
             return false;
         }
     }
+    else
+    {
+        if (result == 0xE2)
+        {
+            timeoutCount[module] = timeoutCount[module] + 1;
+        }
+    }
 
     return false;
 }
+
+bool checkTimeouts()
+{
+    // Scissor lift
+    if (timeoutCount[SCISSOR] > maxTimeouts)
+    {
+        scissorLiftOverride = true;
+    }
+    else
+    {
+        scissorLiftOverride = false;
+    }
+
+    // Snake bodies!
+    if (timeoutCount[SNAKE_BODY] > maxTimeouts)
+    {
+        snakeBodyOverride = true;
+    }
+    else
+        {
+        snakeBodyOverride = false;
+    }
+}
+
+void resetTimeouts()
+{
+    for( uint8_t c = 0; c < 7; c++ )
+    {
+        timeoutCount[c] = 0;
+    }
+}
+
+bool failChaseDone = false;
 
 void updateResetState()
 {   
@@ -349,6 +444,12 @@ void updateResetState()
         {
             if (!enable_serial_debug)
             {
+                if (!failChaseDone)
+                {
+                    node.writeSingleCoil(11,1,SAXAPHONES); // All-chase
+                    failChaseDone = true;
+                }
+
                 /*
                 //  Make sure the Scissor lift has lowered!
                 uint8_t result = node.readHoldingRegisters(0,1,SCISSOR);
@@ -368,15 +469,25 @@ void updateResetState()
                 }
                 */
 
+                checkTimeouts();
+
+                //  Try to reset the snakehead, snakebody and scissorlift
                 if (!snakeBodyResetStatusCheck)
                 {
-                    if (checkResetStatus(SNAKE_BODY))
+                    if (snakeBodyOverride)
                     {
                         snakeBodyResetStatusCheck = true;
                     }
                     else
                     {
-                        node.writeSingleRegister(0, 0, SNAKE_BODY);
+                        if (checkResetStatus(SNAKE_BODY))
+                        {
+                            snakeBodyResetStatusCheck = true;
+                        }
+                        else
+                        {
+                            node.writeSingleRegister(0, 0, SNAKE_BODY);
+                        }
                     }
                 }
 
@@ -394,13 +505,20 @@ void updateResetState()
 
                 if (!scissorResetStatusCheck)
                 {
-                    if (checkResetStatus(SCISSOR))
+                    if (scissorLiftOverride)
                     {
                         scissorResetStatusCheck = true;
                     }
-                    else
+                    else 
                     {
-                        node.writeSingleRegister(0, LOWERED, SCISSOR);
+                        if (checkResetStatus(SCISSOR))
+                        {
+                            scissorResetStatusCheck = true;
+                        }
+                        else
+                        {
+                            node.writeSingleRegister(0, LOWERED, SCISSOR);
+                        }
                     }
                 }
             }
@@ -412,13 +530,16 @@ void updateResetState()
                 snakeBodyResetStatusCheck = true;
             }
 
-            if (scissorResetStatusCheck && snakeHeadResetStatusCheck && snakeBodyResetStatusCheck)
+            // For now, do not require snakehead to be reset!
+            if (scissorResetStatusCheck && /*snakeHeadResetStatusCheck &&*/ snakeBodyResetStatusCheck)
             {
                 //  All checks passed! Set to IDLE and reset checks for next time!
                 mode = IDLE;
                 scissorResetStatusCheck = false;
                 snakeHeadResetStatusCheck = false;
                 snakeBodyResetStatusCheck = false;
+
+                failChaseDone = false;
             }
             resetStateLastTick = currentTick;
         }
@@ -559,16 +680,26 @@ void newRound()
     roundStartTick = currentTick;
 }
 
+bool initTutorialTimer = false;
+uint32_t startTimer = 0;
+
 void initGameState()
 {
     score = 0;
     tutorialScore = 0;
     hardScore = 0;
     tutorialSection = true;
-    if (enable_serial_debug) Serial.println("INIT GAME STATE");
-    delay(20);
-    node.writeSingleRegister(1, GAME, RPI);
-    delay(20);
+    initTutorialTimer = false;
+    if (enable_serial_debug)
+    {
+        Serial.println("INIT GAME STATE");
+    }
+    else
+    {
+        delay(RPI_TRANSMISSION_DELAY); // 50
+        node.writeSingleRegister(1, GAME, RPI);
+        delay(RPI_TRANSMISSION_DELAY); // 10
+    }
     roundDuration = GAME_ROUND_INITIAL_TIMEOUT_MS;
     newRound();
 }
@@ -579,29 +710,73 @@ uint8_t checkTutorialSection()
     {
         if (!enable_serial_debug)
         {
-            //  The tutorial section is when the lift is still rising!
-            uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
-
-            if (result == 0)
+            if (!scissorLiftOverride)
             {
-                if (node.getResponseBuffer(0x00) == RISEN)
+                //  The tutorial section is when the lift is still rising!
+                uint8_t result = node.readHoldingRegisters(0, 1, SCISSOR);
+
+                if (result == 0)
                 {
-                    //  The scissor lift has risen!
-                    tutorialSection = false;
-                    tutorialScore = score;
-                    hardScore = 0;
-                    //  Fire SAXAPHONE 5! Boom!
-                    node.writeSingleCoil(5, 1, SAXAPHONES);
-                    waitingRound = true;
-                    delay(50);
-                    node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
-                    delay(50);
+                    if (node.getResponseBuffer(0x00) == RISEN)
+                    {
+                        //  The scissor lift has risen!
+                        tutorialSection = false;
+                        tutorialScore = score;
+                        hardScore = 0;
+                        //  Fire SAXAPHONE 5! Boom!
+                        node.writeSingleCoil(5, 1, SAXAPHONES);
+                        waitingRound = true;
+                        delay(RPI_TRANSMISSION_DELAY); // 50
+                        node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
+                        delay(RPI_TRANSMISSION_DELAY); // 50
+                    }
+                }
+            }
+            else
+            {
+              //  This is a fallback for the serial debug state ... or if the scissorlift has failed and is no longer responding
+                if (initTutorialTimer == false)
+                {
+                    initTutorialTimer = true;
+                    startTimer = currentTick;
+                }
+                else
+                {
+                    if (currentTick - startTimer > timerDuration)
+                    {
+                        tutorialSection = false;
+                        tutorialScore = score;
+                        hardScore = 0;
+                        node.writeSingleCoil(5, 1, SAXAPHONES);
+                        waitingRound = true;
+                        delay(RPI_TRANSMISSION_DELAY); // 50
+                        node.writeSingleRegister(1, TUTORIAL_OVER, RPI);
+                        delay(RPI_TRANSMISSION_DELAY); // 50
+
+                        initTutorialTimer = false;
+                    }
                 }
             }
         }
         else
         {
-            //  For debugging purposes we don't need to worry about the tutorial section!
+            //  This is a fallback for the serial debug state ... or if the scissorlift has failed and is no longer responding
+            if (initTutorialTimer == false)
+            {
+                initTutorialTimer = true;
+                startTimer = currentTick;
+            }
+            else
+            {
+                if (currentTick - startTimer > timerDuration)
+                {
+                    tutorialSection = false;
+                    tutorialScore = score;
+                    hardScore = 0;
+                    waitingRound = true;
+                    initTutorialTimer = false;
+                }
+            }
         }
     }
 }
@@ -752,55 +927,20 @@ void updateGameState()
                                         break;
                                     default:
                                         node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
-                                        /*
-                                    case 0:
-                                        node.writeSingleCoil(triggeredDrum+1,1,SNAKE_HEAD);
-                                        break;
-                                    case 1:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        break;
-                                    case 2:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        break;
-                                    case 3:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(2,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        break;
-                                    case 4:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(2,1,SAXAPHONES);
-                                        node.writeSingleCoil(3,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        break;
-                                    case 5:
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                        break;
-                                    case 6:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                        break;
-                                    case 7:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                        break;
-                                    case 8:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(2,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                        break;
-                                    default:
-                                        node.writeSingleCoil(1,1,SAXAPHONES);
-                                        node.writeSingleCoil(2,1,SAXAPHONES);
-                                        node.writeSingleCoil(3,1,SAXAPHONES);
-                                        node.writeSingleCoil(4,1,SAXAPHONES);
-                                        node.writeSingleCoil(5,1,SAXAPHONES);
-                                        break;
-                                        */
                                     }
+
+                                    // 0 - No hit!
+                                    // 1 - 1
+                                    // 2 - 2
+                                    // 3 - 3
+                                    // 4 - 4
+                                    // 5 - Center Mirrorball
+                                    // 6 - Left Mirrorball
+                                    // 7 - Right Mirrorball
+                                    // 8 - Horn
+                                    // 9 - Mirrorball Chase
+                                    // 10 - Instrument Chase
+                                    // 11 - All chase
                                 }
                                 else
                                 {
@@ -838,7 +978,10 @@ void updateGameState()
                 //  While in the tutorial section and the score is rising keep sending raise messages
                 if (!enable_serial_debug)
                 {
-                    node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                    if (!scissorLiftOverride)
+                    {
+                        node.writeSingleRegister(0, RISEN, SCISSOR);  //  RAISE scissor lift!
+                    }
                     // Turn on Snakehead LEDs and mouth animations!
                     node.writeSingleRegister(0, 1, SNAKE_HEAD); // Animate!
                 }
@@ -848,7 +991,10 @@ void updateGameState()
             {
                 if (!enable_serial_debug)
                 {
-                    node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
+                    if (!snakeBodyOverride)
+                    {
+                        node.writeSingleRegister(0, 1, SNAKE_BODY); // Animate!
+                    }
                     // Stop snake mouths from  opening!
                     node.writeSingleRegister(2, 2, SNAKE_HEAD);
                 }
@@ -856,7 +1002,7 @@ void updateGameState()
 
             // Quick and dirty way to help RPi keep up with updates
             //  60ms delay (seems to allow 95% of score messages through)
-            delay(60);
+            delay(RPI_TRANSMISSION_DELAY); // 60
 
             if (!enable_serial_debug) node.writeSingleRegister(0, score, RPI);
 
@@ -872,13 +1018,34 @@ void updateGameState()
 uint32_t initStartTick = 0;
 uint32_t initStateInterval = 1000/30;
 
+uint32_t attractInterval = initialAttractInterval;
+uint8_t attractOutput = 0;
+uint32_t lastAttractTick = 0;
+
+uint32_t lastLEDAttractTick = 0;
+uint8_t LEDOutput = 0;
+
+uint32_t lastSnakeAttractTick = 0;
+uint8_t snakeAttractState = 0;
+
 void initIdleState()
 {
     if (enable_serial_debug) Serial.println("INIT IDLE STATE");
     initStartTick = currentTick;
-    delay(50);
-    node.writeSingleRegister(1, IDLE, RPI);
-    delay(50);
+    lastAttractTick = currentTick;      //  Saxaphones
+    lastLEDAttractTick = currentTick;   //  Lights
+    lastSnakeAttractTick = currentTick; //  Snake heads!
+
+    if (enable_serial_debug)
+    {
+      Serial.println("INIT IDLE STATE");
+    }
+    else
+    {
+      delay(RPI_TRANSMISSION_DELAY); // 50
+      node.writeSingleRegister(1, IDLE, RPI);
+      delay(RPI_TRANSMISSION_DELAY); // 50
+    }
 }
 
 void updateIdleState()
@@ -888,17 +1055,135 @@ void updateIdleState()
         //  Starts a new game automatically
         //  mode = GAME;
 
-        //  TODO: Add to see if the start button is pressed!
         if (credits > 0)
         {
+            attractInterval = initialAttractInterval;
             credits = credits - 1;
             if (!enable_serial_debug)
             {
-                delay(20);
-                node.writeSingleRegister(2, credits, RPI);  //  LOWER scissor lift!
-                delay(20);
+                node.writeSingleRegister(0,0,SNAKE_HEAD);   //  Reset snake head!
+                delay(RPI_TRANSMISSION_DELAY); // 20
+                node.writeSingleRegister(2, credits, RPI);
+                delay(RPI_TRANSMISSION_DELAY); // 20
             }
             mode = GAME;
+        }
+        else 
+        {
+            if (currentTick - lastLEDAttractTick > LEDAttractInterval)
+            {
+                //  Update all Lights in sequence!
+
+                for (int r = 0; r < NUM_RINGS - 1; r++)
+                {
+                    ring[r].fill(colourPreset[drumColour[LEDOutput]]);
+                    ring[r].show();
+                }
+
+                LEDOutput += 1;
+                if (LEDOutput > 3)
+                {
+                    LEDOutput = 0;
+                }
+                lastLEDAttractTick = currentTick;
+            }
+
+            if (currentTick - lastAttractTick > attractInterval)
+            {
+                if (!enable_serial_debug)
+                {
+                    switch(attractOutput)
+                    {
+                    case 0:
+                        //  Instrument chase
+                        node.writeSingleCoil(10,1,SAXAPHONES);
+                        attractOutput = 1;
+                        break;
+                    case 1:
+                        //  Two central saxaphones
+                        node.writeSingleCoil(2,1,SAXAPHONES);
+                        node.writeSingleCoil(3,1,SAXAPHONES);
+                        attractOutput = 2;
+                        break;
+                    case 2:
+                        node.writeSingleCoil(1,1,SAXAPHONES);
+                        node.writeSingleCoil(4,1,SAXAPHONES);
+                        attractOutput = 3;
+                        break;
+                    case 3:
+                        node.writeSingleCoil(10,1,SAXAPHONES);
+                        attractOutput = 4;
+                        break;
+                    case 4:
+                        node.writeSingleCoil(5,1,SAXAPHONES);
+                        attractOutput = 0;
+                        break;
+                    default:
+                        node.writeSingleCoil(10,1,SAXAPHONES);
+                        attractOutput = 0;
+                        break;
+                    }
+                }
+                // OPTIONS
+                // SAXAPHONE
+                //node.writeSingleCoil(11,1,SAXAPHONES);
+                    // 0 - No hit!
+                    // 1 - 1
+                    // 2 - 2
+                    // 3 - 3
+                    // 4 - 4
+                    // 5 - Center Mirrorball
+                    // 6 - Left Mirrorball
+                    // 7 - Right Mirrorball
+                    // 8 - Horn
+                    // 9 - Mirrorball Chase
+                    // 10 - Instrument Chase
+                    // 11 - All chase
+
+                lastAttractTick = currentTick;
+                
+                attractInterval = random(minAttractInterval, maxAttractInterval);
+            }
+
+            if (currentTick - lastSnakeAttractTick > snakeAttractInterval)
+            {
+                if(!enable_serial_debug)
+                {
+                    switch(snakeAttractState)
+                    {
+                        case 0:
+                            node.writeSingleRegister(1,0,SNAKE_HEAD);   // Pulsing Eyes on!
+                            snakeAttractState = 1;
+                            break;
+                        case 1:
+                            node.writeSingleRegister(2,0,SNAKE_HEAD);   // Animate mouths
+                            snakeAttractState = 2;
+                            break;
+                        case 2:
+                            node.writeSingleRegister(2,2,SNAKE_HEAD);   // Close mouths
+                            snakeAttractState = 3;
+                            break;
+                        case 3:
+                            node.writeSingleRegister(1,2,SNAKE_HEAD);   // Pulsing Eyes off!
+                            snakeAttractState = 0;
+                            break;
+                        default:
+                            snakeAttractState = 0;
+                            break;
+
+                    }
+                    //  SNAKE HEAD options
+                    //  node.writeSingleRegister(1,0,SNAKE_HEAD); // Pulsing Eyes on!
+                    //  node.writeSingleRegister(1,1,SNAKE_HEAD); // Eyes on!
+                    //  node.writeSingleRegister(1,2,SNAKE_HEAD); // Eyes off!
+
+                    //  node.writeSingleRegister(2,0,SNAKE_HEAD); // Animate Mouths
+                    //  node.writeSingleRegister(2,1,SNAKE_HEAD); // All open Mouths
+                    //  node.writeSingleRegister(2,2,SNAKE_HEAD); // All close Mouths
+                }
+
+                lastSnakeAttractTick = currentTick;
+            }
         }
     }
 }
