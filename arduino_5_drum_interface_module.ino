@@ -362,6 +362,9 @@ void initResetState()
     resetStateTick = currentTick;
     resetAnimationState = true;
 
+    //  Reset scissorlift and snakebody timeouts at the beginning of the reset state to retry after each game!
+    resetTimeouts();
+
     //  Start the process of resetting the scissor lift and snake bodies etc ...
     if (!enable_serial_debug)
     {
