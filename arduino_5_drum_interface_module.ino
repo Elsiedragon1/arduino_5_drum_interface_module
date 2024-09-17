@@ -452,8 +452,8 @@ void updateResetState()
                 if (!failChaseDone)
                 {
                     //  FAIL CHASE SEQUENCE
-                    node.writeSingleCoil(11,1,SAXAPHONES); // All-chase
-                    // node.writeSingleCoil(10,1,SAXAPHONES); // Instrument Chase
+                    // node.writeSingleCoil(11,1,SAXAPHONES); // All-chase
+                    node.writeSingleCoil(10,1,SAXAPHONES); // Instrument Chase
                     failChaseDone = true;
                 }
 
